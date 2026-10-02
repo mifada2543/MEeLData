@@ -1,0 +1,1 @@
+<?php $message = "Hello, World!"; echo e($message); ?>
