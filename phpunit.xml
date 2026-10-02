@@ -21,10 +21,17 @@
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
+        <!-- Deadline & scheduler tests bergantung pada timezone aplikasi. -->
+        <env name="APP_TIMEZONE" value="Asia/Jakarta"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
+        <!--
+            Driver sqlite tidak tersedia pada ekstensi PHP di environment ini
+            (hanya pdo_mysql). Test memakai MySQL pada database terpisah
+            `MEeLData_test`, sehingga tidak menyentuh database development.
+        -->
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_DATABASE" value="MEeLData_test"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
