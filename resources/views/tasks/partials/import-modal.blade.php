@@ -7,7 +7,7 @@
 <div x-data="{ importOpen: false, importBusy: false, fileName: '' }">
     <x-button variant="secondary" @click="importOpen = true">
         <x-icon name="upload" class="size-4" />
-        Import
+        Impor
     </x-button>
 
     <div
@@ -44,12 +44,12 @@
             class="relative w-full max-w-lg overflow-hidden rounded-xl border border-line bg-surface shadow-lg"
         >
             <div class="flex items-center justify-between gap-3 border-b border-line px-6 py-4">
-                <h2 id="import-title" class="text-[15px] font-semibold text-ink">Import Tasks</h2>
+                <h2 id="import-title" class="text-[15px] font-semibold text-ink">Impor Tugas</h2>
                 <button
                     type="button"
                     @click="importOpen = false"
                     class="-m-1.5 rounded-md p-1.5 text-ink-faint transition-colors hover:bg-surface-hover hover:text-ink"
-                    aria-label="Close import"
+                    aria-label="Tutup impor"
                 >
                     <x-icon name="x" class="size-4" />
                 </button>
@@ -64,7 +64,7 @@
             >
                 @csrf
 
-                <label for="import-file" class="block text-[13px] font-medium text-ink-soft">Upload Excel File</label>
+                <label for="import-file" class="block text-[13px] font-medium text-ink-soft">Unggah Berkas Excel</label>
 
                 <label
                     for="import-file"
@@ -72,9 +72,9 @@
                 >
                     <x-icon name="document" class="size-6 text-ink-faint" />
                     <span class="text-[13px] font-medium text-ink">
-                        <span x-text="importBusy ? 'Importing...' : 'Choose a file or drop it here'"></span>
+                        <span x-text="importBusy ? 'Mengimpor...' : 'Pilih berkas atau letakkan di sini'"></span>
                     </span>
-                    <span class="text-xs text-ink-faint">Supported format: .xlsx · max 10 MB</span>
+                    <span class="text-xs text-ink-faint">Format didukung: .xlsx · maks. 10 MB</span>
                 </label>
 
                 <input
@@ -89,8 +89,8 @@
                 >
 
                 <p class="mt-2 flex items-center justify-between gap-3 text-xs">
-                    <span class="truncate font-medium" :class="fileName ? 'text-ink-soft' : 'text-ink-faint'" x-text="fileName || 'No file selected'"></span>
-                    <span class="shrink-0 text-ink-faint">Valid status: progress, done, canceled</span>
+                    <span class="truncate font-medium" :class="fileName ? 'text-ink-soft' : 'text-ink-faint'" x-text="fileName || 'Belum ada berkas dipilih'"></span>
+                    <span class="shrink-0 text-ink-faint">Status valid: progress, done, canceled</span>
                 </p>
 
                 <x-field-error name="file" />
@@ -101,16 +101,16 @@
                         class="inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-soft underline-offset-4 transition-colors hover:text-ink hover:underline"
                     >
                         <x-icon name="download" class="size-3.5" />
-                        Download Template
+                        Unduh Template
                     </a>
 
                     <div class="flex gap-2.5">
                         <x-button variant="secondary" @click="importOpen = false" x-bind:disabled="importBusy">
-                            Cancel
+                            Batal
                         </x-button>
                         <x-button type="submit" x-bind:disabled="importBusy">
-                            <span x-show="!importBusy">Import</span>
-                            <span x-cloak x-show="importBusy">Importing...</span>
+                            <span x-show="!importBusy">Impor</span>
+                            <span x-cloak x-show="importBusy">Mengimpor...</span>
                         </x-button>
                     </div>
                 </div>

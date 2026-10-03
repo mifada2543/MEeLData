@@ -2,7 +2,6 @@
 
 namespace App\Exports;
 
-use App\Enums\TaskStatus;
 use App\Models\TraineeTask;
 use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Concerns\FromQuery;
@@ -29,16 +28,19 @@ class TasksExport implements FromQuery, WithHeadings, WithMapping
      */
     public function headings(): array
     {
+        // Header Bahasa Indonesia. Import menerima header ini kembali
+        // (lihat TasksImport::HEADER_ALIASES), jadi hasil ekspor tetap
+        // bisa langsung diimpor.
         return [
             'UUID',
             'Trainee',
-            'Task',
-            'Description',
-            'Start Date',
-            'Deadline',
+            'Tugas',
+            'Deskripsi',
+            'Tanggal Mulai',
+            'Tanggal Deadline',
             'Status',
-            'Created At',
-            'Updated At',
+            'Dibuat Pada',
+            'Diperbarui Pada',
         ];
     }
 
@@ -55,14 +57,11 @@ class TasksExport implements FromQuery, WithHeadings, WithMapping
             $task->desc,
             $task->start_date?->format('Y-m-d H:i:s'),
             $task->deadline?->format('Y-m-d H:i:s'),
-            $this->statusLabel($task->status),
+            // Nilai kanonik (bukan label) supaya file ekspor bisa
+            // diimpor kembali tanpa perlu terjemahan.
+            $task->status?->value,
             $task->created_at?->format('Y-m-d H:i:s'),
             $task->updated_at?->format('Y-m-d H:i:s'),
         ];
-    }
-
-    protected function statusLabel(?TaskStatus $status): string
-    {
-        return $status instanceof TaskStatus ? $status->label() : '';
     }
 }

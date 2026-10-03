@@ -34,7 +34,7 @@ class FilterAndExportTest extends TestCase
             $this->task(['status' => $case]);
         }
 
-        $response = $this->actingAs($admin, 'admin')
+        $response = $this->actingAs($admin, 'web')
             ->get(route('admin.tasks.index', ['status' => $status->value]));
 
         $response->assertOk();
@@ -53,7 +53,7 @@ class FilterAndExportTest extends TestCase
             $this->task(['status' => $case]);
         }
 
-        $response = $this->actingAs($admin, 'admin')->get(route('admin.tasks.index'));
+        $response = $this->actingAs($admin, 'web')->get(route('admin.tasks.index'));
 
         $this->assertCount(4, $response->viewData('tasks'));
     }
@@ -64,7 +64,7 @@ class FilterAndExportTest extends TestCase
         $this->task();
         $this->task();
 
-        $response = $this->actingAs($admin, 'admin')
+        $response = $this->actingAs($admin, 'web')
             ->get(route('admin.tasks.index', ['status' => 'bogus']));
 
         $response->assertOk();
@@ -77,7 +77,7 @@ class FilterAndExportTest extends TestCase
         $admin = $this->admin();
         TraineeTask::factory()->count(30)->create();
 
-        $response = $this->actingAs($admin, 'admin')
+        $response = $this->actingAs($admin, 'web')
             ->get(route('admin.tasks.index', ['status' => 'progress']));
 
         $response->assertOk();
@@ -102,7 +102,7 @@ class FilterAndExportTest extends TestCase
         $this->task();
         $this->task();
 
-        $this->actingAs($admin, 'admin')
+        $this->actingAs($admin, 'web')
             ->get(route('admin.tasks.export'))
             ->assertOk();
 
@@ -116,7 +116,7 @@ class FilterAndExportTest extends TestCase
         $this->task(['status' => TaskStatus::Progress]);
         $this->task(['status' => TaskStatus::Progress]);
 
-        $this->actingAs($admin, 'admin')
+        $this->actingAs($admin, 'web')
             ->get(route('admin.tasks.export', ['status' => 'progress']))
             ->assertOk();
 
@@ -147,7 +147,7 @@ class FilterAndExportTest extends TestCase
         $removed = $this->task();
         $removed->delete();
 
-        $this->actingAs($admin, 'admin')->get(route('admin.tasks.export'))->assertOk();
+        $this->actingAs($admin, 'web')->get(route('admin.tasks.export'))->assertOk();
 
         $exported = TraineeTask::visibleTo($admin)->get();
 
@@ -178,8 +178,8 @@ class FilterAndExportTest extends TestCase
         $export = new TasksExport(TraineeTask::visibleTo($trainee));
 
         $this->assertSame([
-            'UUID', 'Trainee', 'Task', 'Description', 'Start Date',
-            'Deadline', 'Status', 'Created At', 'Updated At',
+            'UUID', 'Trainee', 'Tugas', 'Deskripsi', 'Tanggal Mulai',
+            'Tanggal Deadline', 'Status', 'Dibuat Pada', 'Diperbarui Pada',
         ], $export->headings());
 
         $row = $export->map($task->fresh());
@@ -188,7 +188,7 @@ class FilterAndExportTest extends TestCase
         $this->assertSame($trainee->name, $row[1]);
         $this->assertSame('Maintenance Kabel', $row[2]);
         $this->assertSame('Perbaikan kabel', $row[3]);
-        $this->assertSame('Progress', $row[6]);
+        $this->assertSame('progress', $row[6]);
     }
 
     public function test_import_template_is_available_to_admin(): void
@@ -205,7 +205,7 @@ class FilterAndExportTest extends TestCase
         $template = new TaskTemplateExport;
 
         $this->assertSame([
-            'trainee_email', 'task', 'description', 'start_date', 'deadline', 'status',
+            'Email Trainee', 'Tugas', 'Deskripsi', 'Tanggal Mulai', 'Tanggal Deadline', 'Status',
         ], $template->headings());
 
         $row = $template->array()[0];

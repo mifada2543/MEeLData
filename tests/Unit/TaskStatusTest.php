@@ -24,9 +24,9 @@ class TaskStatusTest extends TestCase
     public function test_labels_are_human_readable(): void
     {
         $this->assertSame('Progress', TaskStatus::Progress->label());
-        $this->assertSame('Done', TaskStatus::Done->label());
-        $this->assertSame('Late', TaskStatus::Late->label());
-        $this->assertSame('Canceled', TaskStatus::Canceled->label());
+        $this->assertSame('Selesai', TaskStatus::Done->label());
+        $this->assertSame('Terlambat', TaskStatus::Late->label());
+        $this->assertSame('Dibatalkan', TaskStatus::Canceled->label());
     }
 
     public function test_manual_cases_returns_three_cases(): void

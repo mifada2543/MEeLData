@@ -12,13 +12,13 @@ use Illuminate\Support\Str;
  */
 class UserFactory extends Factory
 {
-    /**
-     * The current password being used by the factory.
-     */
+    protected $model = User::class;
+
     protected static ?string $password;
 
     /**
-     * Define the model's default state.
+     * Default-nya trainee; akun admin hanya dibuat oleh factory test atau
+     * melalui AdminSeeder.
      *
      * @return array<string, mixed>
      */
@@ -29,13 +29,16 @@ class UserFactory extends Factory
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
+            'role' => User::ROLE_TRAINEE,
             'remember_token' => Str::random(10),
         ];
     }
 
-    /**
-     * Indicate that the model's email address should be unverified.
-     */
+    public function admin(): static
+    {
+        return $this->state(fn () => ['role' => User::ROLE_ADMIN]);
+    }
+
     public function unverified(): static
     {
         return $this->state(fn (array $attributes) => [

@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
-use App\Models\Admin;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
+/**
+ * Satu gateway login untuk admin maupun trainee (tabel `users` + kolom `role`).
+ */
 class AuthenticationTest extends TestCase
 {
     use RefreshDatabase;
@@ -24,6 +26,38 @@ class AuthenticationTest extends TestCase
         $response->assertRedirect(route('dashboard'));
         $this->assertAuthenticated('web');
         $this->assertDatabaseHas('users', ['email' => 'andi@example.com']);
+    }
+
+    public function test_registration_always_creates_trainee_account(): void
+    {
+        $this->post('/register', [
+            'name' => 'Fake Admin',
+            'email' => 'fake-admin@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ]);
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'fake-admin@example.com',
+            'role' => User::ROLE_TRAINEE,
+        ]);
+    }
+
+    public function test_admin_role_cannot_be_mass_assigned_via_registration(): void
+    {
+        // `role` tidak ada di $fillable sehingga diabaikan meski dikirim.
+        $this->post('/register', [
+            'name' => 'Sneaky',
+            'email' => 'sneaky@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'role' => User::ROLE_ADMIN,
+        ]);
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'sneaky@example.com',
+            'role' => User::ROLE_TRAINEE,
+        ]);
     }
 
     public function test_registration_requires_unique_email(): void
@@ -53,23 +87,6 @@ class AuthenticationTest extends TestCase
 
         $response->assertSessionHasErrors('password');
         $this->assertGuest('web');
-    }
-
-    public function test_admin_cannot_register_through_public_registration(): void
-    {
-        // Route registrasi hanya membuat user (trainee) pada guard web.
-        // Akun admin tidak dapat dibuat dari sana.
-        $response = $this->post('/register', [
-            'name' => 'Fake Admin',
-            'email' => 'fake-admin@example.com',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
-        ]);
-
-        $response->assertRedirect(route('dashboard'));
-        $this->assertDatabaseMissing('admins', ['email' => 'fake-admin@example.com']);
-        $this->assertDatabaseHas('users', ['email' => 'fake-admin@example.com']);
-        $this->assertGuest('admin');
     }
 
     public function test_trainee_can_login(): void
@@ -105,38 +122,33 @@ class AuthenticationTest extends TestCase
         $this->assertGuest('web');
     }
 
-    public function test_admin_can_login_with_seeded_account(): void
+    public function test_admin_can_login_through_the_same_gateway(): void
     {
-        Admin::factory()->create([
+        $admin = $this->admin([
             'email' => 'admin@meel.test',
             'password' => Hash::make('admin123'),
         ]);
 
-        $response = $this->post('/admin/login', [
+        $response = $this->post('/login', [
             'email' => 'admin@meel.test',
             'password' => 'admin123',
         ]);
 
         $response->assertRedirect(route('admin.dashboard'));
-        $this->assertAuthenticated('admin');
+        $this->assertAuthenticatedAs($admin, 'web');
     }
 
-    public function test_admin_cannot_login_via_trainee_login_form(): void
+    public function test_trainee_login_redirects_to_trainee_dashboard(): void
     {
-        Admin::factory()->create([
-            'email' => 'admin@meel.test',
-            'password' => Hash::make('admin123'),
+        User::factory()->create([
+            'email' => 'andi@example.com',
+            'password' => Hash::make('password123'),
         ]);
 
-        $response = $this->from('/login')->post('/login', [
-            'email' => 'admin@meel.test',
-            'password' => 'admin123',
-        ]);
-
-        $response->assertRedirect('/login');
-        $response->assertSessionHasErrors('email');
-        $this->assertGuest('web');
-        $this->assertGuest('admin');
+        $this->post('/login', [
+            'email' => 'andi@example.com',
+            'password' => 'password123',
+        ])->assertRedirect(route('dashboard'));
     }
 
     public function test_trainee_can_logout(): void
@@ -153,10 +165,10 @@ class AuthenticationTest extends TestCase
     {
         $this->authAsAdmin();
 
-        $response = $this->post('/admin/logout');
+        $response = $this->post('/logout');
 
-        $response->assertRedirect(route('admin.login'));
-        $this->assertGuest('admin');
+        $response->assertRedirect(route('login'));
+        $this->assertGuest('web');
     }
 
     public function test_root_redirects_guest_to_login(): void
@@ -176,5 +188,19 @@ class AuthenticationTest extends TestCase
         $this->authAsAdmin();
 
         $this->get('/')->assertRedirect(route('admin.dashboard'));
+    }
+
+    public function test_authenticated_user_cannot_revisit_login_or_register(): void
+    {
+        $this->authAsTrainee();
+
+        $this->get('/login')->assertRedirect(route('dashboard'));
+        $this->get('/register')->assertRedirect(route('dashboard'));
+    }
+
+    public function test_there_is_no_separate_admin_login_route(): void
+    {
+        // Admin login sekarang memakai halaman yang sama dengan trainee.
+        $this->get('/admin/login')->assertNotFound();
     }
 }

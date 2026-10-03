@@ -6,17 +6,19 @@ use App\Enums\TaskStatus;
 use App\Exports\TasksExport;
 use App\Exports\TaskTemplateExport;
 use App\Http\Requests\BulkDeleteRequest;
+use App\Http\Requests\ExportTasksRequest;
 use App\Http\Requests\ImportTasksRequest;
+use App\Http\Requests\RestoreTaskRequest;
 use App\Http\Requests\StoreTaskRequest;
 use App\Http\Requests\UpdateStatusRequest;
 use App\Http\Requests\UpdateTaskRequest;
 use App\Imports\TasksImport;
-use App\Models\Admin;
 use App\Models\TraineeTask;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 use Maatwebsite\Excel\Facades\Excel;
@@ -24,15 +26,19 @@ use Maatwebsite\Excel\Facades\Excel;
 class TraineeTaskController extends Controller
 {
     /**
-     * Halaman daftar task. Query yang sama dipakai oleh export agar
-     * hasil export konsisten dengan filter yang sedang aktif.
+     * Halaman daftar task. Query yang sama dipakai oleh export agar hasil
+     * export konsisten dengan filter dan urutan yang sedang aktif.
      */
     public function index(Request $request): View
     {
         $status = $this->validateStatusFilter($request);
 
-        $tasks = $this->visibleTasks($request->user())
-            ->statusIs($status)
+        $scoped = fn () => $this->visibleTasks($request->user())->statusIs($status);
+
+        $overdueIds = $scoped()->awaitingScheduler()->pluck('id')->all();
+
+        $tasks = $scoped()
+            ->byWorkPriority()
             ->latest()
             ->paginate(25)
             ->withQueryString();
@@ -40,13 +46,99 @@ class TraineeTaskController extends Controller
         return view('tasks.index', [
             'tasks' => $tasks,
             'status' => $status,
+            // `lateCount` = sudah ditandai scheduler.
+            // `pendingLateCount` = seluruh progress yang lewat deadline
+            //   (isi kelompok 4, sumber hitungan mundur).
+            // `schedulerDownCount` = yang lewat MELAMPIUI jendela penandaan
+            //   dan masih progress - satu-satunya kondisi yang benar-benar
+            //   berarti 'scheduler tidak jalan'. Kalau ini memakai
+            //   `pendingLateCount`, setiap task yang baru lewat deadline akan
+            //   memicu peringatan palsu selama jendela 120 detik.
+            'lateCount' => $scoped()->statusLate()->count(),
+            // Jumlah per status untuk baris filter. Tanpa ini, urutan
+            // prioritas membuat task terlambat terdorong ke halaman
+            // terakhir sehingga praktis tidak terlihat lagi.
+            'statusCounts' => $this->statusCounts($scoped()),
+            'pendingLateCount' => $scoped()->awaitingScheduler()->count(),
+            'schedulerDownCount' => $scoped()->overdueProgress()->count(),
+            'archiveGraceDays' => $this->archiveGraceDays(),
+            // Acuan waktu untuk counter, supaya benar sejak frame pertama.
+            'serverNowIso' => now()->toIso8601String(),
+            // Daftar id yang sedang menunggu penandaan. Disuntik ke store
+            // saat render supaya ticker tahu task mana yang "pernah overdue"
+            // - tanpa itu, task berdeadline depan ikut berubah jadi badge
+            // Terlambat begitu polling pertama selesai.
+            'overdueIds' => $overdueIds,
         ]);
+    }
+
+    /**
+     * Halaman Sampah: task yang sudah soft-delete. Hanya admin.
+     *
+     * Memakai `trashed()` (onlyTrashed) karena `findVisibleTask()` tidak
+     * pernah menemukan task terhapus - global scope SoftDeletes
+     * mengecualikannya.
+     */
+    public function trashed(): View
+    {
+        abort_unless($this->isAdmin(), 403);
+
+        $tasks = TraineeTask::query()
+            ->trashed()
+            ->with(['trainee:id,name', 'deletedBy:id,name'])
+            ->latest('deleted_at')
+            ->paginate(25);
+
+        return view('tasks.trash', [
+            'tasks' => $tasks,
+            'archiveGraceDays' => $this->archiveGraceDays(),
+            // Tanpa polling di halaman ini: yang dibutuhkan hanya acuan
+            // waktu server untuk menghitung "terlambat 2 hari 3 jam".
+            'serverNowIso' => now()->toIso8601String(),
+        ]);
+    }
+
+    /**
+     * Form pemulihan task: ganti tanggal, lalu pulihkan.
+     */
+    public function restoreForm(string $task): View
+    {
+        abort_unless($this->isAdmin(), 403);
+
+        $model = TraineeTask::query()->trashed()->findOrFail($task);
+
+        return view('tasks.restore', [
+            'task' => $model,
+            // Tanggal usul sengaja di masa depan supaya form langsung valid.
+            // Deadline lama tidak dipakai karena nilainya sudah lewat.
+            'suggestedStart' => now(),
+            'suggestedDeadline' => $model->deadline->gt(now())
+                ? $model->deadline
+                : now()->addDays($this->archiveGraceDays()),
+        ]);
+    }
+
+    /**
+     * Pulihkan task yang sudah soft-delete, dengan tanggal baru.
+     */
+    public function restore(RestoreTaskRequest $request, string $task): RedirectResponse
+    {
+        abort_unless($this->isAdmin(), 403);
+
+        TraineeTask::query()
+            ->trashed()
+            ->findOrFail($task)
+            ->restoreWithDates($request->taskDates());
+
+        return redirect()
+            ->route('admin.tasks.index')
+            ->with('status', 'Tugas berhasil dipulihkan.');
     }
 
     public function create(): View
     {
         return view('tasks.create', [
-            'trainees' => $this->isAdmin() ? User::orderBy('name')->get(['id', 'name']) : null,
+            'trainees' => $this->assignableTrainees(),
             'task' => new TraineeTask,
         ]);
     }
@@ -57,16 +149,18 @@ class TraineeTaskController extends Controller
 
         return redirect()
             ->route($this->routePrefix().'tasks.index')
-            ->with('status', 'Task created successfully.');
+            ->with('status', 'Tugas berhasil dibuat.');
     }
 
     public function edit(string $task): View
     {
         $task = $this->findVisibleTask($task);
 
+        $this->authorizeEdit($task);
+
         return view('tasks.edit', [
             'task' => $task,
-            'trainees' => $this->isAdmin() ? User::orderBy('name')->get(['id', 'name']) : null,
+            'trainees' => $this->assignableTrainees(),
         ]);
     }
 
@@ -74,11 +168,39 @@ class TraineeTaskController extends Controller
     {
         $task = $this->findVisibleTask($task);
 
+        $this->authorizeEdit($task);
+
         $task->update($request->taskAttributes());
+
+        // Deadline yang digeser ke masa depan membuat status `late` tidak
+        // lagi benar. Dikoreksi di sini (bukan menunggu cron) supaya user
+        // langsung melihat hasilnya; scheduler punya ruleset yang sama
+        // sebagai pengaman untuk jalur lain.
+        $task->reconcileDerivedStatus();
 
         return redirect()
             ->route($this->routePrefix().'tasks.index')
-            ->with('status', 'Task updated successfully.');
+            ->with('status', 'Tugas berhasil diperbarui.');
+    }
+
+    /**
+     * Menolak edit dari trainee atas task yang sudah final.
+     *
+     * Disembunyikan juga di UI (tombol Edit tidak dirender), tapi disembunyikan
+     * bukan pengaman - aturan ini yang benar-benar menolak. Pesannya diambil
+     * dari model supaya sebab dan tampilan selalu sama.
+     */
+    protected function authorizeEdit(TraineeTask $task): void
+    {
+        // Non-null karena rute ini berada di balik middleware `auth`.
+        /** @var User $user */
+        $user = Auth::user();
+
+        if ($task->isEditableBy($user)) {
+            return;
+        }
+
+        abort(403, $task->editLockReason() ?? 'Tugas ini tidak dapat diubah.');
     }
 
     /**
@@ -90,7 +212,7 @@ class TraineeTaskController extends Controller
 
         $task->update(['status' => $request->validated('status')]);
 
-        return back()->with('status', 'Task updated successfully.');
+        return back()->with('status', 'Tugas berhasil diperbarui.');
     }
 
     /**
@@ -100,11 +222,16 @@ class TraineeTaskController extends Controller
     {
         abort_unless($this->isAdmin(), 403);
 
-        $this->findVisibleTask($task)->delete();
+        // `deleted_by` diisi manual delete; auto-arsip scheduler membiarkannya
+        // null sehingga halaman Sampah bisa membedakan "oleh sistem".
+        $model = $this->findVisibleTask($task);
+
+        $model->forceFill(['deleted_by' => Auth::id()])->save();
+        $model->delete();
 
         return redirect()
             ->route('admin.tasks.index')
-            ->with('status', 'Task deleted successfully.');
+            ->with('status', 'Tugas berhasil dihapus.');
     }
 
     /**
@@ -119,32 +246,59 @@ class TraineeTaskController extends Controller
         $deleted = TraineeTask::visibleTo($request->user())
             ->whereKey($ids)
             ->get()
-            ->each->delete()
+            ->each(function (TraineeTask $task) use ($request): void {
+                $task->forceFill(['deleted_by' => $request->user()->getAuthIdentifier()])->save();
+                $task->delete();
+            })
             ->count();
 
         return redirect()
             ->route('admin.tasks.index')
-            ->with('status', trans_choice(
-                '{1} :count task deleted successfully.|[2,*] :count tasks deleted successfully.',
-                $deleted,
-                ['count' => $deleted],
-            ));
+            ->with('status', $deleted.' tugas berhasil dihapus.');
     }
 
     /**
      * Export memakai query yang sama dengan halaman list: scope ownership
-     * + filter status aktif. Tidak pernah mengambil seluruh tabel.
+     * + (id terpilih ATAU filter status aktif).
+     *
+     * - Bila ada baris dicentang, hanya baris itu yang diekspor.
+     * - Bila tidak ada, seluruh hasil filter aktif yang diekspor.
+     *
+     * `ids` selalu diinterseksi dengan `visibleTo()`, sehingga trainee yang
+     * mengirim UUID milik trainee lain hanya mendapatkan tasknya sendiri.
      */
-    public function export(Request $request)
+    public function export(ExportTasksRequest $request)
     {
+        $selectedIds = $request->selectedIds();
         $status = $this->validateStatusFilter($request);
 
-        $filename = 'trainee-tasks-'.now()->format('Y-m-d-His').'.xlsx';
+        $isSelected = $selectedIds !== [];
+
+        $filename = 'meeldata-tasks'.($isSelected ? '-selected' : '').'-'.now()->format('Y-m-d-His').'.xlsx';
 
         return Excel::download(
-            new TasksExport($this->visibleTasks($request->user())->statusIs($status)),
+            new TasksExport($this->exportQuery($request->user(), $selectedIds, $status)),
             $filename
         );
+    }
+
+    /**
+     * Membangun query export. Terpisah dari `export()` agar aturan
+     * "selected menang" dapat diuji tanpa menghasilkan file.
+     *
+     * @param  array<int, string>  $selectedIds
+     */
+    public function exportQuery(?object $actor, array $selectedIds = [], ?string $status = null): Builder
+    {
+        $query = $this->visibleTasks($actor);
+
+        // Selected menang: bila ada id dipilih, filter status diabaikan.
+        $query = $selectedIds !== []
+            ? $query->whereKey($selectedIds)
+            : $query->statusIs($status);
+
+        // Urutan sama dengan halaman list agar isi file mencerminkan layar.
+        return $query->byWorkPriority();
     }
 
     /**
@@ -163,7 +317,7 @@ class TraineeTaskController extends Controller
 
             return back()
                 ->with('import_errors', [])
-                ->with('import_failed', 'Import failed. The file must be a valid .xlsx Excel file.');
+                ->with('import_failed', 'Impor gagal. Berkas harus berupa file Excel .xlsx yang valid.');
         }
 
         return back()->with([
@@ -176,7 +330,23 @@ class TraineeTaskController extends Controller
     {
         abort_unless($this->isAdmin(), 403);
 
-        return Excel::download(new TaskTemplateExport, 'trainee-task-import-template.xlsx');
+        return Excel::download(new TaskTemplateExport, 'meeldata-task-import-template.xlsx');
+    }
+
+    /**
+     * Daftar trainee yang dapat dipilih admin. Akun admin sengaja tidak
+     * ditampilkan walaupun berada pada tabel yang sama.
+     */
+    protected function assignableTrainees(): ?Collection
+    {
+        if (! $this->isAdmin()) {
+            return null;
+        }
+
+        return User::query()
+            ->where('role', User::ROLE_TRAINEE)
+            ->orderBy('name')
+            ->get(['id', 'name']);
     }
 
     /**
@@ -215,7 +385,48 @@ class TraineeTaskController extends Controller
 
     protected function isAdmin(): bool
     {
-        return Auth::user() instanceof Admin;
+        /*
+         * Lihat catatan yang sama di routes/web.php: facade `Auth`
+         * mendeklarasikan `user()` sebagai `Authenticatable|null`, padahal
+         * guard `web` memakai `App\Models\User`.
+         */
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        return (bool) $user?->isAdmin();
+    }
+
+    /**
+     * Jumlah task per status untuk baris filter.
+     *
+     * Semua status selalu dikembalikan (termasuk yang nol) supaya urutannya
+     * stabil dan tidak bergantung pada data.
+     *
+     * @param  Builder<TraineeTask>  $query
+     * @return array<string, int>
+     */
+    protected function statusCounts(Builder $query): array
+    {
+        $counts = (clone $query)
+            ->selectRaw('status, count(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status');
+
+        $result = [];
+
+        foreach (TaskStatus::cases() as $case) {
+            $result[$case->value] = (int) ($counts[$case->value] ?? 0);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Masa tenggang auto-arsip (hari), dari config.
+     */
+    protected function archiveGraceDays(): int
+    {
+        return max(0, (int) config('meeldata.late_archive_grace_days', 7));
     }
 
     /**

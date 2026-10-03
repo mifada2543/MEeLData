@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\Admin;
+use App\Enums\TaskStatus;
 use App\Models\TraineeTask;
 use App\Models\User;
 use Database\Seeders\AdminSeeder;
@@ -20,26 +20,27 @@ class SeederTest extends TestCase
     {
         $this->seed(DatabaseSeeder::class);
 
-        $this->assertSame(1, Admin::count());
-        $this->assertGreaterThan(0, User::count());
+        $this->assertSame(1, User::where('role', User::ROLE_ADMIN)->count());
+        $this->assertGreaterThan(0, User::where('role', User::ROLE_TRAINEE)->count());
         $this->assertGreaterThan(0, TraineeTask::count());
     }
 
-    public function test_admin_email_comes_from_env(): void
+    public function test_admin_is_created_inside_users_table_with_admin_role(): void
     {
         $this->seed(AdminSeeder::class);
 
-        $admin = Admin::first();
+        $admin = User::where('role', User::ROLE_ADMIN)->firstOrFail();
 
         $this->assertSame(env('ADMIN_EMAIL', 'admin@meel.test'), $admin->email);
         $this->assertSame(env('ADMIN_NAME', 'Program Admin'), $admin->name);
+        $this->assertTrue($admin->isAdmin());
     }
 
     public function test_seeded_admin_password_is_hashed(): void
     {
         $this->seed(AdminSeeder::class);
 
-        $admin = Admin::first();
+        $admin = User::where('role', User::ROLE_ADMIN)->firstOrFail();
 
         $this->assertNotSame('admin123', $admin->password);
         $this->assertTrue(Hash::check(
@@ -53,7 +54,7 @@ class SeederTest extends TestCase
         $this->seed(DatabaseSeeder::class);
         $this->seed(DatabaseSeeder::class);
 
-        $this->assertSame(1, Admin::count());
+        $this->assertSame(1, User::where('role', User::ROLE_ADMIN)->count());
     }
 
     public function test_trainee_seeder_is_idempotent(): void
@@ -69,16 +70,16 @@ class SeederTest extends TestCase
         $this->assertSame($tasksAfterFirst, TraineeTask::count());
     }
 
-    public function test_seeded_admin_can_login(): void
+    public function test_seeded_admin_can_login_through_the_shared_gateway(): void
     {
         $this->seed(AdminSeeder::class);
 
-        $this->post(route('admin.login.store'), [
+        $this->post(route('login.store'), [
             'email' => env('ADMIN_EMAIL', 'admin@meel.test'),
             'password' => env('ADMIN_PASSWORD', 'admin123'),
         ])->assertRedirect(route('admin.dashboard'));
 
-        $this->assertAuthenticated('admin');
+        $this->assertAuthenticated('web');
     }
 
     public function test_seeded_trainee_can_login(): void
@@ -91,5 +92,19 @@ class SeederTest extends TestCase
         ])->assertRedirect(route('dashboard'));
 
         $this->assertAuthenticated('web');
+    }
+
+    public function test_seeded_tasks_are_owned_by_trainees(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $admin = User::where('role', User::ROLE_ADMIN)->firstOrFail();
+
+        // Admin tidak boleh memiliki task.
+        $this->assertSame(0, TraineeTask::where('trainee_id', $admin->id)->count());
+        $this->assertGreaterThan(0, TraineeTask::whereIn('status', [
+            TaskStatus::Progress->value,
+            TaskStatus::Done->value,
+        ])->count());
     }
 }

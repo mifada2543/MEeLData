@@ -1,13 +1,16 @@
 @extends('layouts.app')
 
+@use('Illuminate\Support\Facades\Auth')
+@use('App\Models\User')
+
 @php
-    $isAdmin = auth()->user() instanceof \App\Models\Admin;
+    $isAdmin = User::isAdminActor(Auth::user());
     $prefix = $isAdmin ? 'admin.' : '';
 @endphp
 
-@section('title', 'Edit Task')
-@section('heading', 'Edit Task')
-@section('subheading', 'Update the details of this task')
+@section('title', 'Ubah Tugas')
+@section('heading', 'Ubah Tugas')
+@section('subheading', 'Perbarui detail tugas ini')
 
 @section('content')
 <div class="mx-auto max-w-2xl">
@@ -25,8 +28,9 @@
                 'task' => $task,
                 'trainees' => $trainees,
                 'isAdmin' => $isAdmin,
+                'prefix' => $prefix,
                 'action' => route($prefix.'tasks.update', ['task' => $task->id]),
-                'submitLabel' => 'Save Changes',
+                'submitLabel' => 'Simpan Perubahan',
                 'formId' => 'task-form',
             ])
         </div>

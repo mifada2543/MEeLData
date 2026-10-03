@@ -27,6 +27,11 @@ class DashboardController extends Controller
             'canceled' => (int) ($counts[TaskStatus::Canceled->value] ?? 0),
         ];
 
+        // Tiga daftar di dashboard hanya menampilkan CUPLIKAN (5 item) supaya
+        // tidak menjadi halaman panjang. Karena itu jumlah sebenarnya
+        // dihitung terpisah - kalau tidak, lencana pada tiap daftar akan
+        // menulis "5" padahal isinya 12, dan sisa task-nya jadi mustahil
+        // ditemukan tanpa membuka halaman daftar.
         return view('dashboard', [
             'stats' => $stats,
             'recentTasks' => (clone $scope)->with('trainee:id,name')->latest()->take(5)->get(),
@@ -42,6 +47,8 @@ class DashboardController extends Controller
                 ->orderBy('deadline')
                 ->take(5)
                 ->get(),
+            'approachingCount' => (clone $scope)->approachingDeadline()->count(),
+            'lateCount' => (clone $scope)->statusLate()->count(),
         ]);
     }
 }

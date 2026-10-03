@@ -91,7 +91,7 @@
 
         <div class="flex justify-end gap-2.5 rounded-b-xl border-t border-line bg-surface-sunken px-6 py-4">
             <x-button variant="secondary" @click="{{ $open }} = false" x-bind:disabled="busy">
-                Cancel
+                Batal
             </x-button>
 
             <button

@@ -22,12 +22,12 @@ class SchedulerTest extends TestCase
 
     public function test_overdue_progress_task_becomes_late(): void
     {
-        Carbon::setTestNow('2026-10-10 12:00:00');
+        Carbon::setTestNow(now()->addDays(9)->format('Y-m-d H:i:s'));
 
         $task = TraineeTask::factory()->create([
             'status' => TaskStatus::Progress,
-            'start_date' => '2026-10-01 09:00:00',
-            'deadline' => '2026-10-09 17:00:00',
+            'start_date' => now()->subDays(4)->format('Y-m-d H:i:s'),
+            'deadline' => now()->subDay()->format('Y-m-d H:i:s'), // sudah lewat 1 hari
         ]);
 
         $this->artisan('tasks:mark-late')->assertSuccessful();
@@ -40,11 +40,11 @@ class SchedulerTest extends TestCase
 
     public function test_overdue_done_task_stays_done(): void
     {
-        Carbon::setTestNow('2026-10-10 12:00:00');
+        Carbon::setTestNow(now()->addDays(9)->format('Y-m-d H:i:s'));
 
         $task = TraineeTask::factory()->create([
             'status' => TaskStatus::Done,
-            'deadline' => '2026-10-09 17:00:00',
+            'deadline' => now()->subDay()->format('Y-m-d H:i:s'), // sudah lewat 1 hari
         ]);
 
         $this->artisan('tasks:mark-late')->assertSuccessful();
@@ -57,11 +57,11 @@ class SchedulerTest extends TestCase
 
     public function test_overdue_canceled_task_stays_canceled(): void
     {
-        Carbon::setTestNow('2026-10-10 12:00:00');
+        Carbon::setTestNow(now()->addDays(9)->format('Y-m-d H:i:s'));
 
         $task = TraineeTask::factory()->create([
             'status' => TaskStatus::Canceled,
-            'deadline' => '2026-10-09 17:00:00',
+            'deadline' => now()->subDay()->format('Y-m-d H:i:s'), // sudah lewat 1 hari
         ]);
 
         $this->artisan('tasks:mark-late')->assertSuccessful();
@@ -74,12 +74,12 @@ class SchedulerTest extends TestCase
 
     public function test_task_with_future_deadline_is_not_touched(): void
     {
-        Carbon::setTestNow('2026-10-10 12:00:00');
+        Carbon::setTestNow(now()->addDays(9)->format('Y-m-d H:i:s'));
 
         $task = TraineeTask::factory()->create([
             'status' => TaskStatus::Progress,
-            'start_date' => '2026-10-05 09:00:00',
-            'deadline' => '2026-10-11 17:00:00',
+            'start_date' => now()->subDays(5)->format('Y-m-d H:i:s'),
+            'deadline' => now()->addDay()->format('Y-m-d H:i:s'),
         ]);
 
         $this->artisan('tasks:mark-late')->assertSuccessful();
@@ -92,11 +92,11 @@ class SchedulerTest extends TestCase
 
     public function test_existing_late_task_is_not_reprocessed(): void
     {
-        Carbon::setTestNow('2026-10-10 12:00:00');
+        Carbon::setTestNow(now()->addDays(9)->format('Y-m-d H:i:s'));
 
         $task = TraineeTask::factory()->create([
             'status' => TaskStatus::Late,
-            'deadline' => '2026-10-09 17:00:00',
+            'deadline' => now()->subDay()->format('Y-m-d H:i:s'), // sudah lewat 1 hari
         ]);
 
         $updatedAt = $task->updated_at;
@@ -115,11 +115,11 @@ class SchedulerTest extends TestCase
 
     public function test_command_is_idempotent_across_multiple_runs(): void
     {
-        Carbon::setTestNow('2026-10-10 12:00:00');
+        Carbon::setTestNow(now()->addDays(9)->format('Y-m-d H:i:s'));
 
         $task = TraineeTask::factory()->create([
             'status' => TaskStatus::Progress,
-            'deadline' => '2026-10-09 17:00:00',
+            'deadline' => now()->subDay()->format('Y-m-d H:i:s'), // sudah lewat 1 hari
         ]);
 
         $this->artisan('tasks:mark-late');
@@ -134,11 +134,11 @@ class SchedulerTest extends TestCase
 
     public function test_soft_deleted_overdue_task_is_not_resurrected(): void
     {
-        Carbon::setTestNow('2026-10-10 12:00:00');
+        Carbon::setTestNow(now()->addDays(9)->format('Y-m-d H:i:s'));
 
         $task = TraineeTask::factory()->create([
             'status' => TaskStatus::Progress,
-            'deadline' => '2026-10-09 17:00:00',
+            'deadline' => now()->subDay()->format('Y-m-d H:i:s'), // sudah lewat 1 hari
         ]);
         $task->delete();
 
@@ -152,11 +152,11 @@ class SchedulerTest extends TestCase
 
     public function test_manual_late_recovery_to_progress_is_reverted_by_scheduler(): void
     {
-        Carbon::setTestNow('2026-10-10 12:00:00');
+        Carbon::setTestNow(now()->addDays(9)->format('Y-m-d H:i:s'));
 
         $task = TraineeTask::factory()->create([
             'status' => TaskStatus::Late,
-            'deadline' => '2026-10-09 17:00:00',
+            'deadline' => now()->subDay()->format('Y-m-d H:i:s'), // sudah lewat 1 hari
         ]);
 
         // Admin mengembalikan status late -> progress secara manual.
@@ -177,11 +177,11 @@ class SchedulerTest extends TestCase
 
     public function test_manual_late_recovery_to_done_is_not_reverted(): void
     {
-        Carbon::setTestNow('2026-10-10 12:00:00');
+        Carbon::setTestNow(now()->addDays(9)->format('Y-m-d H:i:s'));
 
         $task = TraineeTask::factory()->create([
             'status' => TaskStatus::Late,
-            'deadline' => '2026-10-09 17:00:00',
+            'deadline' => now()->subDay()->format('Y-m-d H:i:s'), // sudah lewat 1 hari
         ]);
 
         $task->update(['status' => TaskStatus::Done->value]);
@@ -215,12 +215,12 @@ class SchedulerTest extends TestCase
     public function test_deadline_boundary_uses_strictly_less_than_now(): void
     {
         // Deadline tepat sama dengan "sekarang" belum dianggap overdue.
-        Carbon::setTestNow('2026-10-10 12:00:00');
+        Carbon::setTestNow(now()->addDays(9)->format('Y-m-d H:i:s'));
 
         $boundary = TraineeTask::factory()->create([
             'status' => TaskStatus::Progress,
-            'start_date' => '2026-10-01 09:00:00',
-            'deadline' => '2026-10-10 12:00:00',
+            'start_date' => now()->subDays(4)->format('Y-m-d H:i:s'),
+            'deadline' => now()->format('Y-m-d H:i:s'),
         ]);
 
         $this->artisan('tasks:mark-late')->assertSuccessful();
@@ -233,34 +233,34 @@ class SchedulerTest extends TestCase
 
     public function test_approaching_deadline_scope_uses_three_day_window(): void
     {
-        Carbon::setTestNow('2026-10-10 12:00:00');
+        Carbon::setTestNow(now()->addDays(9)->format('Y-m-d H:i:s'));
 
         $admin = $this->admin();
 
         $withinWindow = TraineeTask::factory()->create([
             'status' => TaskStatus::Progress,
-            'start_date' => '2026-10-08 09:00:00',
-            'deadline' => '2026-10-11 17:00:00', // +1 hari
+            'start_date' => now()->subDays(2)->format('Y-m-d H:i:s'),
+            'deadline' => now()->addDay()->format('Y-m-d H:i:s'), // +1 hari
         ]);
 
         $outsideWindow = TraineeTask::factory()->create([
             'status' => TaskStatus::Progress,
-            'deadline' => '2026-10-20 17:00:00', // +10 hari
+            'deadline' => now()->addDays(10)->format('Y-m-d H:i:s'), // +10 hari
         ]);
 
         $doneExcluded = TraineeTask::factory()->create([
             'status' => TaskStatus::Done,
-            'deadline' => '2026-10-11 17:00:00',
+            'deadline' => now()->addDay()->format('Y-m-d H:i:s'),
         ]);
 
         $canceledExcluded = TraineeTask::factory()->create([
             'status' => TaskStatus::Canceled,
-            'deadline' => '2026-10-11 17:00:00',
+            'deadline' => now()->addDay()->format('Y-m-d H:i:s'),
         ]);
 
         $lateExcluded = TraineeTask::factory()->create([
             'status' => TaskStatus::Late,
-            'deadline' => '2026-10-09 17:00:00',
+            'deadline' => now()->subDay()->format('Y-m-d H:i:s'), // sudah lewat 1 hari
         ]);
 
         $results = TraineeTask::visibleTo($admin)->approachingDeadline()->pluck('id');

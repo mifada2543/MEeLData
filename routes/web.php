@@ -1,10 +1,11 @@
 <?php
 
-use App\Http\Controllers\Auth\AdminLoginController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\TaskLiveController;
 use App\Http\Controllers\TraineeTaskController;
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -12,24 +13,32 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 | Root
 |--------------------------------------------------------------------------
-| Guest -> /login, Trainee -> /dashboard, Admin -> /admin/dashboard
+| Guest -> /login, Trainee/Admin -> /dashboard atau /admin/dashboard
+| sesuai perannya.
 */
 Route::get('/', function () {
-    if (Auth::guard('admin')->check()) {
+    /*
+     * `Auth::user()` bertipe `Authenticatable|null` menurut deklarasi
+     * facade-nya, sehingga IDE menganggap `isAdmin()` tidak ada - padahal
+     * guard `web` memakai `App\Models\User` (config/auth.php). Anotasi ini
+     * hanya memberi tahu IDE apa yang sebenarnya dikembalikan.
+     */
+    /** @var User|null $user */
+    $user = Auth::user();
+
+    if ($user?->isAdmin()) {
         return redirect()->route('admin.dashboard');
     }
 
-    if (Auth::guard('web')->check()) {
-        return redirect()->route('dashboard');
-    }
-
-    return redirect()->route('login');
+    return redirect()->route($user ? 'dashboard' : 'login');
 })->name('home');
 
 /*
 |--------------------------------------------------------------------------
-| Authentication — Trainee (guard: web)
+| Authentication — satu gateway untuk admin & trainee
 |--------------------------------------------------------------------------
+| Admin dapat login melalui halaman yang sama dengan trainee. Akun admin
+| hanya dibuat oleh AdminSeeder; tidak ada registrasi admin.
 */
 Route::middleware('guest:web')->group(function () {
     Route::get('login', [LoginController::class, 'create'])->name('login');
@@ -45,26 +54,14 @@ Route::post('logout', [LoginController::class, 'destroy'])
 
 /*
 |--------------------------------------------------------------------------
-| Authentication — Admin (guard: admin)
-|--------------------------------------------------------------------------
-| Tidak ada registrasi admin; akun hanya dibuat melalui AdminSeeder.
-*/
-Route::middleware('guest:admin')->group(function () {
-    Route::get('admin/login', [AdminLoginController::class, 'create'])->name('admin.login');
-    Route::post('admin/login', [AdminLoginController::class, 'store'])->name('admin.login.store');
-});
-
-Route::post('admin/logout', [AdminLoginController::class, 'destroy'])
-    ->middleware('auth:admin')
-    ->name('admin.logout');
-
-/*
-|--------------------------------------------------------------------------
-| Trainee area (guard: web)
+| Trainee area
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth:web')->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Data live (waktu server + task terlambat) untuk hitungan mundur.
+    Route::get('tasks/live', TaskLiveController::class)->name('tasks.live');
 
     Route::get('tasks', [TraineeTaskController::class, 'index'])->name('tasks.index');
     Route::get('tasks/create', [TraineeTaskController::class, 'create'])->name('tasks.create');
@@ -77,11 +74,14 @@ Route::middleware('auth:web')->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| Admin area (guard: admin)
+| Admin area
 |--------------------------------------------------------------------------
+| `can:admin` menghasilkan 403 untuk trainee yang membuka route di sini.
 */
-Route::prefix('admin')->name('admin.')->middleware('auth:admin')->group(function () {
+Route::prefix('admin')->name('admin.')->middleware(['auth:web', 'can:admin'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('tasks/live', TaskLiveController::class)->name('tasks.live');
 
     Route::get('tasks', [TraineeTaskController::class, 'index'])->name('tasks.index');
     Route::get('tasks/create', [TraineeTaskController::class, 'create'])->name('tasks.create');
@@ -92,6 +92,14 @@ Route::prefix('admin')->name('admin.')->middleware('auth:admin')->group(function
     Route::get('tasks/import/template', [TraineeTaskController::class, 'importTemplate'])->name('tasks.import.template');
 
     Route::post('tasks/bulk-delete', [TraineeTaskController::class, 'bulkDelete'])->name('tasks.bulk-delete');
+
+    /*
+     * Sampah & pemulihan task. Terdaftar sebelum route `{task}` agar tidak
+     * tertangkap route parametrik. Tetap berada di dalam grup `can:admin`.
+     */
+    Route::get('tasks/trash', [TraineeTaskController::class, 'trashed'])->name('tasks.trash');
+    Route::get('tasks/{task}/restore', [TraineeTaskController::class, 'restoreForm'])->name('tasks.restore.form');
+    Route::post('tasks/{task}/restore', [TraineeTaskController::class, 'restore'])->name('tasks.restore');
 
     Route::get('tasks/{task}/edit', [TraineeTaskController::class, 'edit'])->name('tasks.edit');
     Route::match(['put', 'patch'], 'tasks/{task}', [TraineeTaskController::class, 'update'])->name('tasks.update');

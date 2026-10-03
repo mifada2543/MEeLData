@@ -21,31 +21,27 @@ class UiRenderTest extends TestCase
     public function test_guest_pages_render(): void
     {
         $this->get(route('login'))->assertOk()
-            ->assertSee('Sign in')
+            ->assertSee('Selamat datang kembali')
             ->assertSee('name="_token"', false);
 
-        $this->get(route('admin.login'))->assertOk()
-            ->assertSee('Admin email')
-            ->assertSee('provisioned by seeder');
-
         $this->get(route('register'))->assertOk()
-            ->assertSee('Create account')
-            ->assertSee('Confirm password');
+            ->assertSee('Buat akun Anda')
+            ->assertSee('Ulangi kata sandi');
     }
 
     public function test_app_layout_renders_for_admin(): void
     {
         $admin = $this->admin(['name' => 'Rina']);
 
-        $this->actingAs($admin, 'admin')->get(route('admin.dashboard'))->assertOk()
+        $this->actingAs($admin, 'web')->get(route('admin.dashboard'))->assertOk()
             ->assertSee('Rina')
             ->assertSee('Dashboard');
 
-        $this->actingAs($admin, 'admin')->get(route('admin.tasks.index'))->assertOk()
-            ->assertSee('Tasks');
+        $this->actingAs($admin, 'web')->get(route('admin.tasks.index'))->assertOk()
+            ->assertSee('Tugas');
 
-        $this->actingAs($admin, 'admin')->get(route('admin.tasks.create'))->assertOk()
-            ->assertSee('Create Task');
+        $this->actingAs($admin, 'web')->get(route('admin.tasks.create'))->assertOk()
+            ->assertSee('Tambah Tugas');
     }
 
     public function test_app_layout_renders_for_trainee(): void
@@ -54,11 +50,11 @@ class UiRenderTest extends TestCase
 
         $this->actingAs($trainee, 'web')->get(route('dashboard'))->assertOk()
             ->assertSee('Andi')
-            ->assertSee('My Tasks');
+            ->assertSee('Tugas Saya');
 
         $this->actingAs($trainee, 'web')->get(route('tasks.index'))->assertOk();
         $this->actingAs($trainee, 'web')->get(route('tasks.create'))->assertOk()
-            ->assertSee('Create Task');
+            ->assertSee('Tambah Tugas');
     }
 
     public function test_edit_form_renders_with_existing_values(): void
@@ -71,7 +67,7 @@ class UiRenderTest extends TestCase
         ]);
 
         $this->actingAs($trainee, 'web')->get(route('tasks.edit', $task))->assertOk()
-            ->assertSee('Edit Task')
+            ->assertSee('Ubah Tugas')
             ->assertSee('Maintenance Kabel')
             ->assertSee('Andi Pratama');
     }
@@ -104,17 +100,17 @@ class UiRenderTest extends TestCase
         $admin = $this->admin();
         $trainee = $this->trainee();
 
-        $this->actingAs($admin, 'admin')
+        $this->actingAs($admin, 'web')
             ->get(route('admin.tasks.index'))
             ->assertOk()
-            ->assertSee('Import Tasks', false)
-            ->assertSee('Delete Selected', false);
+            ->assertSee('Impor Tugas', false)
+            ->assertSee('Hapus Terpilih', false);
 
         $this->actingAs($trainee, 'web')
             ->get(route('tasks.index'))
             ->assertOk()
-            ->assertDontSee('Import Tasks', false)
-            ->assertDontSee('Delete Selected', false)
+            ->assertDontSee('Impor Tugas', false)
+            ->assertDontSee('Hapus Terpilih', false)
             ->assertDontSee('bulk-delete-form', false);
     }
 
@@ -135,20 +131,62 @@ class UiRenderTest extends TestCase
     public function test_empty_state_is_shown_without_tasks(): void
     {
         $this->authAsAdmin()->get(route('admin.tasks.index'))->assertOk()
-            ->assertSee('No tasks found');
+            ->assertSee('Belum ada tugas');
 
         $this->authAsAdmin()->get(route('admin.tasks.index', ['status' => 'done']))->assertOk()
-            ->assertSee('No tasks match the selected filter')
-            ->assertSee('reset the filter');
+            ->assertSee('Tidak ada tugas yang cocok dengan filter')
+            ->assertSee('atur ulang filter');
     }
 
-    public function test_filter_modal_is_available_to_both_roles(): void
+    public function test_export_button_is_visible_for_both_roles(): void
     {
+        // Ekspor tidak lagi disembunyikan di dalam modal filter, dan tidak
+        // memakai label Inggris.
         $this->authAsAdmin()->get(route('admin.tasks.index'))->assertOk()
-            ->assertSee('Export Result', false);
+            ->assertSee('Ekspor tugas ke Excel?', false)
+            ->assertSee('Ekspor Terpilih', false);
 
         $this->authAsTrainee()->get(route('tasks.index'))->assertOk()
-            ->assertSee('Export Result', false);
+            ->assertSee('Ekspor tugas ke Excel?', false);
+    }
+
+    public function test_export_dialog_message_has_no_stray_space_before_punctuation(): void
+    {
+        // Jumlah tugas dan sisa kalimat dirangkai di klien. Bila Blade
+        // menyisipkan spasi di antara kedua <span>, tampilannya menjadi
+        // "1 tugas yang dipilih . Filter ...".
+        $html = $this->authAsAdmin()->get(route('admin.tasks.index'))
+            ->assertOk()->getContent();
+
+        preg_match('/<p[^>]*>.*?Hanya ekspor.*?<\/p>/s', $html, $match);
+        $this->assertNotEmpty($match, 'Paragraf pesan mode "selected" tidak ditemukan.');
+
+        // html_entity_decode + collapse whitespace mendekati teks yang dibaca user.
+        $text = html_entity_decode(strip_tags($match[0]), ENT_QUOTES);
+        $text = trim(preg_replace('/\s+/', ' ', $text));
+
+        $this->assertStringContainsString('dipilih.', $text);
+        $this->assertStringNotContainsString('dipilih .', $text);
+    }
+
+    public function test_trainee_has_checkbox_for_export_but_no_bulk_delete(): void
+    {
+        $trainee = $this->trainee();
+        TraineeTask::factory()->create(['trainee_id' => $trainee->id]);
+
+        $this->actingAs($trainee, 'web')->get(route('tasks.index'))->assertOk()
+            ->assertSee('Pilih tugas untuk diekspor', false)
+            ->assertDontSee('Hapus Terpilih', false)
+            ->assertDontSee('bulk-delete-form', false);
+    }
+
+    public function test_admin_checkbox_is_labelled_for_bulk_actions(): void
+    {
+        $this->task();
+
+        $this->authAsAdmin()->get(route('admin.tasks.index'))->assertOk()
+            ->assertSee('Pilih tugas untuk aksi massal', false)
+            ->assertSee('bulk-delete-form', false);
     }
 
     public function test_status_badge_renders_all_status_labels(): void
@@ -159,11 +197,80 @@ class UiRenderTest extends TestCase
             TraineeTask::factory()->create(['status' => $case]);
         }
 
-        $this->actingAs($admin, 'admin')->get(route('admin.tasks.index'))->assertOk()
+        $this->actingAs($admin, 'web')->get(route('admin.tasks.index'))->assertOk()
             ->assertSee('Progress')
-            ->assertSee('Done')
-            ->assertSee('Late')
-            ->assertSee('Canceled');
+            ->assertSee('Selesai')
+            ->assertSee('Terlambat')
+            ->assertSee('Dibatalkan');
+    }
+
+    public function test_status_badge_itself_is_the_dropdown_trigger(): void
+    {
+        // design.md §8.1: "[ Progress ▼ ]" yang diklik langsung. Tidak ada
+        // lagi tombol "Ubah" terpisah di sebelah badge.
+        $task = TraineeTask::factory()->create(['status' => TaskStatus::Progress]);
+
+        $html = $this->authAsAdmin()->get(route('admin.tasks.index'))
+            ->assertOk()->getContent();
+
+        preg_match('/<button[^>]*aria-haspopup="menu".*?<\/button>/s', $html, $match);
+        $this->assertNotEmpty($match, 'Badge status tidak ditemukan sebagai <button>.');
+
+        $trigger = $match[0];
+
+        // Label status tetap jadi teks yang terlihat (bukan hanya ikon/aria).
+        $this->assertStringContainsString('Progress', $trigger);
+        $this->assertStringContainsString('aria-label="Ubah status: Progress"', $trigger);
+        $this->assertStringContainsString('aria-expanded', $trigger);
+
+        // Warna badge sama persis dengan <x-status-badge> statis.
+        foreach ($task->status->badgeClasses() as $class) {
+            $this->assertStringContainsString($class, $trigger);
+        }
+
+        // Tidak ada tombol "Ubah" terpisah.
+        $this->assertDoesNotMatchRegularExpression('/>\s*Ubah\s*</', $html);
+
+        // Sel status hanya boleh punya SATU badge. Menambah <x-status-badge>
+        // di sebelah <x-status-select> akan memunculkan dua pill.
+        preg_match('/<td[^>]*class="table-body-cell w-40">(.*?)<\/td>/s', $html, $cell);
+        $this->assertNotEmpty($cell, 'Sel status tidak ditemukan.');
+        $this->assertSame(
+            1,
+            substr_count($cell[1], 'bg-progress-surface'),
+            'Sel status harus hanya berisi satu badge (trigger-nya).',
+        );
+    }
+
+    public function test_status_dropdown_offers_only_manual_cases(): void
+    {
+        TraineeTask::factory()->create(['status' => TaskStatus::Progress]);
+
+        $html = $this->authAsAdmin()->get(route('admin.tasks.index'))
+            ->assertOk()->getContent();
+
+        // Hanya form update status yang diperiksa. Filter `?status=` memang
+        // BOLEH memfilter status `late`; yang dilarang adalah menetapkan
+        // status `late` secara manual.
+        preg_match('/<form[^>]*action="[^"]*\/status"[^>]*>(.*?)<\/form>/s', $html, $form);
+        $this->assertNotEmpty($form, 'Form update status tidak ditemukan.');
+
+        preg_match_all('/name="status"\s+value="([^"]+)"/', $form[1], $values);
+
+        $this->assertSame(['progress', 'done', 'canceled'], $values[1]);
+        $this->assertNotContains('late', $values[1]);
+    }
+
+    public function test_status_badge_falls_back_to_native_select_without_js(): void
+    {
+        TraineeTask::factory()->create(['status' => TaskStatus::Progress]);
+
+        $html = $this->authAsAdmin()->get(route('admin.tasks.index'))
+            ->assertOk()->getContent();
+
+        // Tanpa JS dropdown tidak bisa dibuka, jadi ada <noscript>.
+        $this->assertStringContainsString('<noscript>', $html);
+        $this->assertStringContainsString('name="status"', $html);
     }
 
     public function test_403_page_renders_for_trainee_on_admin_route(): void
@@ -171,7 +278,7 @@ class UiRenderTest extends TestCase
         $this->authAsTrainee()
             ->get(route('admin.tasks.index'))
             ->assertForbidden()
-            ->assertSee('Forbidden');
+            ->assertSee('Akses Ditolak');
     }
 
     public function test_validation_errors_are_shown_near_fields(): void
@@ -187,7 +294,7 @@ class UiRenderTest extends TestCase
             ->from(route('admin.tasks.create'))
             ->post(route('admin.tasks.store'), ['task' => '', 'start_date' => '', 'deadline' => ''])
             ->assertOk()
-            ->assertSee('The task field is required.');
+            ->assertSee('Kolom nama tugas wajib diisi.');
     }
 
     public function test_import_result_section_renders_errors(): void
@@ -198,7 +305,7 @@ class UiRenderTest extends TestCase
         $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->fromArray(['trainee_email', 'task', 'description', 'start_date', 'deadline', 'status'], null, 'A1');
-        $sheet->fromArray(['nobody@example.com', 'X', 'D', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'progress'], null, 'A2');
+        $sheet->fromArray(['nobody@example.com', 'X', 'D', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'], null, 'A2');
         (new Xlsx($spreadsheet))->save($path);
 
         $response = $this->authAsAdmin()
@@ -210,9 +317,9 @@ class UiRenderTest extends TestCase
             ->authAsAdmin()
             ->get(session()->previousUrl() ?: route('admin.tasks.index'))
             ->assertOk()
-            ->assertSee('Import Result')
-            ->assertSee('0 imported', false)
-            ->assertSee('was not found')
+            ->assertSee('Hasil Impor')
+            ->assertSee('0 berhasil', false)
+            ->assertSee('tidak ditemukan')
             ->assertSee('nobody@example.com');
 
         @unlink($path);
@@ -227,10 +334,10 @@ class UiRenderTest extends TestCase
             ->post(route('tasks.store'), [
                 'task' => 'Task with toast',
                 'desc' => 'desc',
-                'start_date' => '2026-10-01 09:00:00',
-                'deadline' => '2026-10-05 17:00:00',
+                'start_date' => now()->addDays(0)->format('Y-m-d H:i:s'),
+                'deadline' => now()->addDays(4)->format('Y-m-d H:i:s'),
             ])
             ->assertOk()
-            ->assertSee('Task created successfully.');
+            ->assertSee('Tugas berhasil dibuat.');
     }
 }

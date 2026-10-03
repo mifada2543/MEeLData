@@ -5,12 +5,121 @@ namespace Tests\Feature;
 use App\Enums\TaskStatus;
 use App\Models\TraineeTask;
 use App\Models\User;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Tests\TestCase;
 
 class AuthorizationTest extends TestCase
 {
     use RefreshDatabase;
+
+    /**
+     * `User::isAdminActor()` dippingakai di mana-mana kita hanya memegang
+     * `?Authenticatable` dan perlu memanggil `isAdmin()`.
+     *
+     * Kasus terakhir - actor yang BUKAN `App\Models\User` - sengaja
+     * diuji karena helper ini memeriksa dengan `instanceof`. Kalau suatu
+     * saat guard diganti ke model lain, helper harus mengembalikan `false`
+     * (gagal tertutup), bukan memanggil method yang tidak ada.
+     */
+    public function test_is_admin_actor_recognises_only_app_users(): void
+    {
+        $this->assertTrue(User::isAdminActor($this->admin()));
+        $this->assertFalse(User::isAdminActor($this->trainee()));
+        $this->assertFalse(User::isAdminActor(null));
+
+        $foreign = new class implements Authenticatable
+        {
+            public function getAuthIdentifierName(): string
+            {
+                return 'id';
+            }
+
+            public function getAuthIdentifier(): mixed
+            {
+                return 1;
+            }
+
+            public function getAuthPasswordName(): string
+            {
+                return 'password';
+            }
+
+            public function getAuthPassword(): string
+            {
+                return '';
+            }
+
+            public function getRememberToken(): ?string
+            {
+                return null;
+            }
+
+            public function setRememberToken($value): void {}
+
+            public function getRememberTokenName(): string
+            {
+                return '';
+            }
+        };
+
+        $this->assertFalse(User::isAdminActor($foreign),
+            'Actor dari model lain harus dianggap bukan admin (gagal tertutup).');
+    }
+
+    /**
+     * Scope `visibleTo()` harus gagal tertutup untuk actor asing.
+     *
+     * Inilah gunanya pemeriksaan `instanceof`: kalau suatu saat guard
+     * memakai model lain, actor itu tidak otomatis dianggap admin - yang
+     * berarti dia tidak melihat seluruh tabel.
+     */
+    public function test_visible_to_scope_fails_closed_for_unknown_actor(): void
+    {
+        $this->task();
+        $this->task();
+
+        $foreign = new class implements Authenticatable
+        {
+            public function getAuthIdentifierName(): string
+            {
+                return 'id';
+            }
+
+            public function getAuthIdentifier(): mixed
+            {
+                return 999;
+            }
+
+            public function getAuthPasswordName(): string
+            {
+                return 'password';
+            }
+
+            public function getAuthPassword(): string
+            {
+                return '';
+            }
+
+            public function getRememberToken(): ?string
+            {
+                return null;
+            }
+
+            public function setRememberToken($value): void {}
+
+            public function getRememberTokenName(): string
+            {
+                return '';
+            }
+        };
+
+        $visible = TraineeTask::visibleTo($foreign)->pluck('id');
+
+        $this->assertCount(0, $visible,
+            'Actor yang bukan App\Models\User tidak boleh melihat task apa pun.');
+    }
 
     public function test_trainee_cannot_read_other_trainee_task(): void
     {
@@ -30,8 +139,8 @@ class AuthorizationTest extends TestCase
         $response = $this->authAsTrainee()->put(route('tasks.update', $task), [
             'task' => 'Hijacked',
             'desc' => 'desc',
-            'start_date' => '2026-10-01 09:00:00',
-            'deadline' => '2026-10-05 17:00:00',
+            'start_date' => now()->addDays(0)->format('Y-m-d H:i:s'),
+            'deadline' => now()->addDays(4)->format('Y-m-d H:i:s'),
         ]);
 
         $response->assertForbidden();
@@ -66,8 +175,8 @@ class AuthorizationTest extends TestCase
             'trainee_id' => $victim->id,
             'task' => 'Task for other trainee',
             'desc' => 'desc',
-            'start_date' => '2026-10-01 09:00:00',
-            'deadline' => '2026-10-05 17:00:00',
+            'start_date' => now()->addDays(0)->format('Y-m-d H:i:s'),
+            'deadline' => now()->addDays(4)->format('Y-m-d H:i:s'),
         ]);
 
         $this->assertDatabaseHas('trainee_tasks', [
@@ -90,8 +199,8 @@ class AuthorizationTest extends TestCase
             'trainee_id' => $victim->id,
             'task' => 'Moved task',
             'desc' => 'desc',
-            'start_date' => '2026-10-01 09:00:00',
-            'deadline' => '2026-10-05 17:00:00',
+            'start_date' => now()->addDays(0)->format('Y-m-d H:i:s'),
+            'deadline' => now()->addDays(4)->format('Y-m-d H:i:s'),
         ]);
 
         $this->assertDatabaseHas('trainee_tasks', [
@@ -152,7 +261,7 @@ class AuthorizationTest extends TestCase
     public function test_guest_is_redirected_to_login_pages(): void
     {
         $this->get(route('tasks.index'))->assertRedirect(route('login'));
-        $this->get(route('admin.tasks.index'))->assertRedirect(route('admin.login'));
+        $this->get(route('admin.tasks.index'))->assertRedirect(route('login'));
         $this->get(route('dashboard'))->assertRedirect(route('login'));
     }
 
@@ -202,7 +311,7 @@ class AuthorizationTest extends TestCase
         $this->actingAs($trainee, 'web');
         auth()->shouldUse('web');
 
-        $visible = TraineeTask::visibleTo(auth()->user())->pluck('id');
+        $visible = TraineeTask::visibleTo(Auth::user())->pluck('id');
 
         $this->assertTrue($visible->contains($ownTask->id));
         $this->assertFalse($visible->contains($otherTask->id));

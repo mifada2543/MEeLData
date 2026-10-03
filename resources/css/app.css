@@ -44,6 +44,18 @@
     --color-accent-hover: oklch(20% 0.02 260);
     --color-accent-soft: oklch(96% 0.008 260);
 
+    /*
+     * Aksen sekunder. HANYA dipakai pada halaman auth (tombol "Buat
+     * akun saya") supaya card register berbeda dari card Sign in.
+     *
+     * Hue 295 (violet) dijauhkan dari warna status (250 biru, 165 hijau,
+     * 25 merah) supaya tidak pernah tertukar dengan arti status. Karena
+     * hanya dipakai di halaman auth - yang tidak menampilkan data -
+     * kanal warna status tetap utuh.
+     */
+    --color-accent-alt: oklch(52% 0.19 295);
+    --color-accent-alt-hover: oklch(46% 0.18 295);
+
     /* Status colors (satu-satunya tempat warna bernada) */
     --color-progress: oklch(55% 0.16 250);
     --color-progress-surface: oklch(96% 0.025 250);
@@ -147,9 +159,116 @@
     .section-label {
         @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-faint;
     }
+
+    /*
+     * Halaman auth: dua panel setengah lebar yang BERTUKAR POSISI.
+     *
+     *   Sign in   -> brand kiri,  form kanan
+     *   Register  -> form kiri,   brand kanan
+     *
+     * Panel dipindahkan dengan `translateX(±100%)` — 100% mengacu pada
+     * lebar panel itu sendiri (setengah viewport), sehingga keduanya
+     * bertukar tepat tanpa celah dan tetap full-height.
+     *
+     * Di bawah `lg`: layout normal, brand disembunyikan, hanya cross-fade.
+     */
+    .auth-stage {
+        position: relative;
+        overflow: hidden;
+        min-height: 100dvh;
+    }
+
+    @media (max-width: 63.999rem) {
+        /*
+         * Di bawah lg tidak ada pertukaran panel (tidak cukup ruang), jadi
+         * panel brand disembunyikan dan hanya form yang tampil dengan
+         * cross-fade. Identitas MEeLData tetap dibawa header ringkas di dalam panel form.
+         */
+        .auth-brand {
+            display: none;
+        }
+
+        .auth-form {
+            display: flex;
+            min-height: 100dvh;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+    }
+
+    @media (min-width: 64rem) {
+        .auth-stage {
+            display: block;
+        }
+
+        .auth-panel {
+            position: absolute;
+            inset-block: 0;
+            width: 50%;
+            transition-property: transform;
+            transition-duration: 380ms;
+            transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+            will-change: transform;
+        }
+
+        .auth-brand {
+            left: 0;
+        }
+
+        .auth-brand--right {
+            transform: translateX(100%);
+        }
+
+        .auth-form {
+            right: 0;
+            display: flex;
+            /*
+             * Tepi atas di-pin (bukan center) supaya kedua card mulai
+             * dari koordinat y yang sama. Card register lebih tinggi dari
+             * Sign in; bila di-center, card akan melompat +/-65px saat
+             * mode berganti. Dengan top-pinned, card yang lebih tinggi
+             * tumbuh ke bawah tanpa menggeser yang pendek.
+             */
+            align-items: flex-start;
+            justify-content: center;
+            padding: clamp(3rem, 12vh, 9rem) 2.5rem 3rem;
+        }
+
+        .auth-form--left {
+            transform: translateX(-100%);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .auth-panel {
+            transition: none;
+        }
+    }
 }
 
 @layer utilities {
+    /*
+     * Wadah scroll horizontal untuk tabel.
+     *
+     * `overflow-x: auto` saja TIDAK cukup untuk tabel. Terbukti dengan
+     * pengukuran di browser: sebuah `div` selebar 939px di dalam wadah yang
+     * sama tidak membuat halaman bisa digeser sideways, tapi `<table>`
+     * selebar 939px di dalamnya membocorkan "layout overflow" sampai ke
+     * scroll area root. Akibatnya dokumen punya 934px di viewport 820px,
+     * dan seluruh halaman - termasuk header sticky - bergeser 114px ke
+     * kiri saat pengguna menggeser.
+     *
+     * `contain: paint` memotong overflow itu di husk wadahnya, sehingga
+     * halaman tidak ikut bergeser. Scroll horizontal di dalam tabel tetap
+     * berfungsi normal, dan `position: sticky` pada header tetap memakai
+     * scrollport yang sama.
+     */
+    .table-scroll {
+        @apply overflow-x-auto;
+        contain: paint;
+    }
+
     /* Wajah tabel yang "table-first": gridline sangat soft, header sticky */
     .table-header-cell {
         @apply sticky top-0 z-10 bg-surface-sunken/95 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-muted backdrop-blur-sm;

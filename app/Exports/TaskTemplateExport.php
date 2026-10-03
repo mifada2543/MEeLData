@@ -7,6 +7,8 @@ use Maatwebsite\Excel\Concerns\WithHeadings;
 
 /**
  * Template import: 1 header row + 1 contoh data row (OQ-4).
+ * Header & contoh memakai Bahasa Indonesia; import juga menerima header
+ * teknis (trainee_email, task, ...) untuk kompatibilitas.
  * Status contoh memakai `progress` karena `late` tidak boleh diinput.
  */
 class TaskTemplateExport implements FromArray, WithHeadings
@@ -18,11 +20,11 @@ class TaskTemplateExport implements FromArray, WithHeadings
     {
         return [
             [
-                'trainee@example.com',
-                'Maintenance Kabel Jaringan',
+                'andi@example.com',
+                'Perbaikan Kabel Jaringan',
                 'Perbaikan kabel jaringan lantai 2 dan pengujian konektivitas.',
-                now()->format('Y-m-d H:i:s'),
-                now()->addDays(3)->format('Y-m-d H:i:s'),
+                now()->format('d/m/Y H:i:s'),
+                now()->addDays(3)->format('d/m/Y H:i:s'),
                 'progress',
             ],
         ];
@@ -34,12 +36,12 @@ class TaskTemplateExport implements FromArray, WithHeadings
     public function headings(): array
     {
         return [
-            'trainee_email',
-            'task',
-            'description',
-            'start_date',
-            'deadline',
-            'status',
+            'Email Trainee',
+            'Tugas',
+            'Deskripsi',
+            'Tanggal Mulai',
+            'Tanggal Deadline',
+            'Status',
         ];
     }
 }

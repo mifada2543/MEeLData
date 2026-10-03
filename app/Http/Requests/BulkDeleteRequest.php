@@ -26,13 +26,15 @@ class BulkDeleteRequest extends FormRequest
     }
 
     /**
+     * Pesan overridden karena aturan min(1) milik aplikasi, bukan bawaan.
+     *
      * @return array<string, string>
      */
     public function messages(): array
     {
         return [
-            'ids.required' => 'Select at least one task to delete.',
-            'ids.min' => 'Select at least one task to delete.',
+            'ids.required' => 'Pilih minimal satu tugas untuk dihapus.',
+            'ids.min' => 'Pilih minimal satu tugas untuk dihapus.',
         ];
     }
 }

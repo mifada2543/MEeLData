@@ -15,7 +15,7 @@ class BulkDeleteTest extends TestCase
         $admin = $this->admin();
         $tasks = TraineeTask::factory()->count(3)->create();
 
-        $response = $this->actingAs($admin, 'admin')
+        $response = $this->actingAs($admin, 'web')
             ->post(route('admin.tasks.bulk-delete'), [
                 'ids' => $tasks->pluck('id')->all(),
             ]);
@@ -36,7 +36,7 @@ class BulkDeleteTest extends TestCase
         $selected = TraineeTask::factory()->count(2)->create();
         $kept = TraineeTask::factory()->count(2)->create();
 
-        $this->actingAs($admin, 'admin')->post(route('admin.tasks.bulk-delete'), [
+        $this->actingAs($admin, 'web')->post(route('admin.tasks.bulk-delete'), [
             'ids' => $selected->pluck('id')->all(),
         ]);
 
@@ -85,7 +85,7 @@ class BulkDeleteTest extends TestCase
 
         $active = TraineeTask::factory()->create();
 
-        $this->actingAs($admin, 'admin')->post(route('admin.tasks.bulk-delete'), [
+        $this->actingAs($admin, 'web')->post(route('admin.tasks.bulk-delete'), [
             'ids' => [$alreadyDeleted->id, $active->id],
         ]);
 
@@ -98,9 +98,9 @@ class BulkDeleteTest extends TestCase
         $admin = $this->admin();
         $tasks = TraineeTask::factory()->count(2)->create();
 
-        $this->actingAs($admin, 'admin')
+        $this->actingAs($admin, 'web')
             ->post(route('admin.tasks.bulk-delete'), ['ids' => $tasks->pluck('id')->all()])
-            ->assertSessionHas('status', '2 tasks deleted successfully.');
+            ->assertSessionHas('status', '2 tugas berhasil dihapus.');
     }
 
     public function test_bulk_delete_is_scoped_by_admin_visibility(): void
@@ -109,7 +109,7 @@ class BulkDeleteTest extends TestCase
         $tasks = TraineeTask::factory()->count(2)->create();
 
         // Admin melihat seluruh task, sehingga semua id di bawah ini valid.
-        $this->actingAs($admin, 'admin')->post(route('admin.tasks.bulk-delete'), [
+        $this->actingAs($admin, 'web')->post(route('admin.tasks.bulk-delete'), [
             'ids' => $tasks->pluck('id')->all(),
         ]);
 

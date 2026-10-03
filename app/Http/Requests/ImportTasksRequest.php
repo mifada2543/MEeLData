@@ -25,14 +25,16 @@ class ImportTasksRequest extends FormRequest
     }
 
     /**
+     * Pesan overridden agar menyebut batas 10 MB dengan satuan yang jelas.
+     *
      * @return array<string, string>
      */
     public function messages(): array
     {
         return [
-            'file.required' => 'Please choose an Excel file to import.',
-            'file.mimes' => 'The file must be a valid .xlsx Excel file.',
-            'file.max' => 'The file may not be greater than 10 MB.',
+            'file.required' => 'Silakan pilih file Excel yang akan diimpor.',
+            'file.mimes' => 'Berkas harus berupa file Excel .xlsx yang valid.',
+            'file.max' => 'Ukuran berkas tidak boleh lebih dari 10 MB.',
         ];
     }
 }

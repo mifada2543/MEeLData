@@ -6,10 +6,10 @@
 {{-- Laporan hasil import: sukses + detail kegagalan per nomor baris Excel. --}}
 <section aria-labelledby="import-result-title" class="mb-4 overflow-hidden rounded-xl border border-line bg-surface shadow-xs">
     <header class="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
-        <h2 id="import-result-title" class="text-sm font-semibold text-ink">Import Result</h2>
+        <h2 id="import-result-title" class="text-sm font-semibold text-ink">Hasil Impor</h2>
 
         <span class="rounded-full bg-surface-sunken px-2.5 py-1 text-[11px] font-medium tabular-nums text-ink-muted">
-            {{ $imported }} imported · {{ count($errors) }} failed
+            {{ $imported }} berhasil · {{ count($errors) }} gagal
         </span>
     </header>
 
@@ -17,22 +17,22 @@
         @if ($imported > 0)
             <p class="flex items-center gap-2 text-[13px] font-medium text-done">
                 <x-icon name="check-circle" class="size-4 shrink-0" />
-                {{ $imported }} {{ Str::plural('task', $imported) }} imported successfully.
+                {{ $imported }} {{ Str::plural('tugas', $imported) }} berhasil diimpor.
             </p>
         @endif
 
         @if (count($errors) > 0)
             <p class="mt-1.5 flex items-center gap-2 text-[13px] font-medium text-late">
                 <x-icon name="alert" class="size-4 shrink-0" />
-                {{ count($errors) }} {{ Str::plural('row', count($errors)) }} failed and {{ count($errors) === 1 ? 'was' : 'were' }} not imported.
+                {{ count($errors) }} {{ Str::plural('baris', count($errors)) }} gagal dan tidak diimpor.
             </p>
 
             <div class="mt-3 max-h-64 overflow-y-auto rounded-lg border border-line">
                 <table class="w-full border-collapse text-sm">
                     <thead class="sticky top-0">
                         <tr class="bg-surface-sunken">
-                            <th scope="col" class="table-header-cell w-20">Row</th>
-                            <th scope="col" class="table-header-cell">Reason</th>
+                            <th scope="col" class="table-header-cell w-24">Baris</th>
+                            <th scope="col" class="table-header-cell">Alasan</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-line">

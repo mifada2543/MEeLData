@@ -6,12 +6,7 @@
     ditampilkan (design.md §3.2 & §8).
 --}}
 @php
-    [$text, $surface, $border, $dot] = match ($status->value) {
-        'progress' => ['text-progress', 'bg-progress-surface', 'border-progress-border', 'bg-progress'],
-        'done' => ['text-done', 'bg-done-surface', 'border-done-border', 'bg-done'],
-        'late' => ['text-late', 'bg-late-surface', 'border-late-border', 'bg-late'],
-        default => ['text-canceled', 'bg-canceled-surface', 'border-canceled-border', 'bg-canceled'],
-    };
+    [$text, $surface, $border, $dot] = $status->badgeClasses();
 
     $sizes = [
         'sm' => 'gap-1.5 px-2 py-0.5 text-[11px]',

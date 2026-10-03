@@ -3,8 +3,8 @@
 namespace App\Http\Requests;
 
 use App\Enums\TaskStatus;
-use App\Models\Admin;
 use App\Models\User;
+use App\Rules\NotBeforeNow;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -22,35 +22,37 @@ class StoreTaskRequest extends FormRequest
     }
 
     /**
+     * Hanya admin yang boleh menentukan trainee; trainee tidak punya
+     * jalur untuk memilih trainee lain.
+     */
+    protected function isAdmin(): bool
+    {
+        return User::isAdminActor($this->user());
+    }
+
+    /**
      * @return array<string, array<int, mixed>>
      */
     public function rules(): array
     {
-        $isAdmin = $this->user() instanceof Admin;
+        $isAdmin = $this->isAdmin();
 
         return [
             'trainee_id' => [
                 $isAdmin ? 'required' : 'nullable',
                 'integer',
-                Rule::exists('users', 'id'),
+                // Hanya akun trainee yang boleh menjadi assignee. Akun admin
+                // ditolak walau request dibuat-buat secara manual.
+                Rule::exists('users', 'id')->where('role', User::ROLE_TRAINEE),
             ],
             'task' => ['required', 'string', 'max:255'],
             'desc' => ['nullable', 'string'],
-            'start_date' => ['required', 'date'],
-            'deadline' => ['required', 'date', 'after_or_equal:start_date'],
+            // Tanggal lampau ditolak supaya task baru tidak langsung
+            // berstatus terlambat (regresi: user membuat task kemarin).
+            'start_date' => ['required', 'date', new NotBeforeNow('Tanggal mulai')],
+            'deadline' => ['required', 'date', 'after_or_equal:start_date', new NotBeforeNow('Tanggal deadline')],
             // `late` hanya dihasilkan scheduler, tidak boleh dipilih manual.
             'status' => ['nullable', Rule::in(TaskStatus::manualValues())],
-        ];
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    public function messages(): array
-    {
-        return [
-            'deadline.after_or_equal' => 'The deadline must be a date after or equal to the start date.',
-            'status.in' => 'The status must be one of: '.implode(', ', TaskStatus::manualValues()).'.',
         ];
     }
 
@@ -59,7 +61,7 @@ class StoreTaskRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        if (! $this->user() instanceof Admin) {
+        if (! $this->isAdmin()) {
             $this->merge(['trainee_id' => $this->user()?->id]);
         }
     }
@@ -74,7 +76,7 @@ class StoreTaskRequest extends FormRequest
     {
         $data = $this->validated();
 
-        $data['trainee_id'] = $this->user() instanceof Admin
+        $data['trainee_id'] = $this->isAdmin()
             ? $data['trainee_id']
             : $this->user()?->id;
 

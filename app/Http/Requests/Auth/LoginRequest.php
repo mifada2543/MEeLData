@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Auth;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -33,7 +34,10 @@ class LoginRequest extends FormRequest
      */
     public function authenticate(): void
     {
-        if (! auth()->attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+        // Facade `Auth`, bukan helper `auth()`: method helper diteruskan
+        // lewat `__call` sehingga analis statis tidak melihat `attempt()`.
+        // Facade mendeklarikannya lewat `@method static bool attempt(...)`.
+        if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
             throw ValidationException::withMessages([
                 'email' => __('auth.failed'),
             ]);

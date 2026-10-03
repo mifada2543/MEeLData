@@ -9,9 +9,9 @@
 
 <div x-data="{ bulkDeleteOpen: false }">
     <x-confirm-modal
-        title="Delete selected tasks?"
-        confirm-label="Delete"
-        busy-label="Deleting"
+        title="Hapus tugas terpilih?"
+        confirm-label="Hapus"
+        busy-label="Menghapus"
         tone="danger"
         open="bulkDeleteOpen"
         form-id="bulk-delete-form"
@@ -20,17 +20,17 @@
             <x-button variant="dangerSoft" @click="bulkDeleteOpen = true" x-bind:disabled="selected.length === 0">
                 <x-icon name="trash" class="size-4" />
                 <span x-show="selected.length > 0">
-                    Delete Selected
+                    Hapus Terpilih
                     <span class="rounded-full bg-late/10 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums" x-text="selected.length"></span>
                 </span>
-                <span x-show="selected.length === 0">Delete Selected</span>
+                <span x-show="selected.length === 0">Hapus Terpilih</span>
             </x-button>
         </x-slot:trigger>
 
         <x-slot:form>
             <p class="mt-3 flex items-center gap-2 rounded-md bg-late-surface px-3 py-2.5 text-[13px] font-medium text-late">
                 <x-icon name="alert" class="size-4 shrink-0" />
-                <span><span class="tabular-nums" x-text="selected.length"></span> task(s) will be deleted.</span>
+                <span><span class="tabular-nums" x-text="selected.length"></span> tugas akan dihapus.</span>
             </p>
 
             <form

@@ -24,6 +24,11 @@ use PhpOffice\PhpSpreadsheet\Shared\Date;
  * - duplikat diperbolehkan dan dianggap task baru;
  * - setiap row gagal dilaporkan dengan nomor baris Excel asli
  *   (heading = row 1, sehingga index+2 adalah nomor baris file).
+ *
+ * Header kolom dan nilai status menerima dua bentuk supaya ramah dipakai:
+ * - teknis    : trainee_email, task, description, start_date, deadline, status
+ * - Indonesia : email_trainee, tugas, deskripsi, tanggal_mulai, deadline, status
+ *               dan status "Progress" / "Selesai" / "Dibatalkan"
  */
 class TasksImport implements ToCollection, WithHeadingRow
 {
@@ -32,12 +37,50 @@ class TasksImport implements ToCollection, WithHeadingRow
 
     protected int $imported = 0;
 
+    /** Nomor baris file untuk row yang sedang divalidasi. */
+    protected int $currentRowNumber = 0;
+
     /**
      * Cache email trainee agar tidak query berulang.
      *
      * @var array<string, int>
      */
     protected array $traineeIds = [];
+
+    /**
+     * Header alternatif untuk setiap kunci internal.
+     *
+     * Maatwebsite mengubah header menjadi slug lowercase
+     * (`Str::slug($value, '_')`), sehingga "Tanggal Mulai" menjadi
+     * `tanggal_mulai`. Semua alias ditulis dalam bentuk slug itu agar
+     * file ekspor (header Bahasa Indonesia) maupun file buatan sendiri
+     * dengan header teknis sama-sama bisa diimpor.
+     *
+     * @var array<string, array<int, string>>
+     */
+    protected const HEADER_ALIASES = [
+        'trainee_email' => ['email_trainee', 'email', 'nama_trainee'],
+        'task' => ['tugas', 'nama_tugas'],
+        'description' => ['deskripsi', 'keterangan'],
+        'start_date' => ['tanggal_mulai', 'mulai'],
+        'deadline' => ['tanggal_deadline'],
+        'status' => ['status_tugas'],
+    ];
+
+    /**
+     * Daftar format tanggal yang diterima. `d/m/Y` mengikuti format
+     * tampilan Indonesia, `Y-m-d` mengikuti format umum hasil export.
+     *
+     * @var array<int, string>
+     */
+    protected const DATE_FORMATS = [
+        'Y-m-d H:i:s',
+        'Y-m-d H:i',
+        'Y-m-d',
+        'd/m/Y H:i:s',
+        'd/m/Y H:i',
+        'd/m/Y',
+    ];
 
     public function collection(Collection $rows): void
     {
@@ -61,7 +104,7 @@ class TasksImport implements ToCollection, WithHeadingRow
                 $this->imported++;
             } catch (\Throwable $e) {
                 report($e);
-                $this->addError($rowNumber, 'Failed to save this row. Please check the values and try again.');
+                $this->addError($this->currentRowNumber, 'Baris ini gagal disimpan. Periksa nilainya lalu coba lagi.');
             }
         }
     }
@@ -80,63 +123,75 @@ class TasksImport implements ToCollection, WithHeadingRow
         $desc = $this->stringValue($row, 'description');
         $startDate = $this->stringValue($row, 'start_date');
         $deadline = $this->stringValue($row, 'deadline');
-        $status = strtolower($this->stringValue($row, 'status'));
+        $status = mb_strtolower($this->stringValue($row, 'status'));
 
         // Trainee
         if ($email === '') {
-            return $this->fail('Trainee email is required.', $row);
+            return $this->fail('Email trainee wajib diisi.', $row);
         }
 
         if (! isset($this->traineeIds[$email])) {
-            return $this->fail("Trainee \"{$email}\" was not found.", $row);
+            return $this->fail('Trainee "'.$email.'" tidak ditemukan.', $row);
         }
 
-        // Task
+        // Tugas
         if ($task === '') {
-            return $this->fail('Task is required.', $row);
+            return $this->fail('Nama tugas wajib diisi.', $row);
         }
 
         if (mb_strlen($task) > 255) {
-            return $this->fail('Task may not be greater than 255 characters.', $row);
+            return $this->fail('Nama tugas tidak boleh lebih dari 255 karakter.', $row);
         }
 
-        // Dates
+        // Tanggal
         if ($startDate === '') {
-            return $this->fail('Start date is required.', $row);
+            return $this->fail('Tanggal mulai wajib diisi.', $row);
         }
 
         $start = $this->parseDate($startDate);
 
         if ($start === null) {
-            return $this->fail("Start date \"{$startDate}\" is not a valid date.", $row);
+            return $this->fail('Tanggal mulai "'.$startDate.'" tidak valid.', $row);
+        }
+
+        // Perbandingan per menit, sejalan dengan presisi input
+        // `datetime-local` dan App\Rules\NotBeforeNow.
+        if ($start->startOfMinute()->lt(now()->startOfMinute())) {
+            return $this->fail('Tanggal mulai tidak boleh sebelum waktu sekarang.', $row);
         }
 
         if ($deadline === '') {
-            return $this->fail('Deadline is required.', $row);
+            return $this->fail('Tanggal deadline wajib diisi.', $row);
         }
 
         $deadlineValue = $this->parseDate($deadline);
 
         if ($deadlineValue === null) {
-            return $this->fail("Deadline \"{$deadline}\" is not a valid date.", $row);
+            return $this->fail('Tanggal deadline "'.$deadline.'" tidak valid.', $row);
+        }
+
+        if ($deadlineValue->startOfMinute()->lt(now()->startOfMinute())) {
+            return $this->fail('Tanggal deadline tidak boleh sebelum waktu sekarang.', $row);
         }
 
         if ($deadlineValue->lt($start)) {
-            return $this->fail('Deadline must be after or equal to start date.', $row);
+            return $this->fail('Tanggal deadline harus sama dengan atau setelah tanggal mulai.', $row);
         }
 
-        // Status
-        if ($status === '') {
-            $status = TaskStatus::Progress->value;
-        }
+        // Status: menerima nilai kanonik maupun label Bahasa Indonesia.
+        $normalized = TaskStatus::normalizeInput($status === '' ? 'progress' : $status);
 
-        if (! in_array($status, TaskStatus::manualValues(), true)) {
-            if ($status === TaskStatus::Late->value) {
-                return $this->fail('Status "late" is not allowed. "Late" is set automatically by the system.', $row);
+        if ($normalized === null) {
+            if ($status === TaskStatus::Late->value || $status === 'terlambat') {
+                return $this->fail(
+                    'Status "late"/"Terlambat" tidak diperbolehkan. Status tersebut diatur otomatis oleh sistem.',
+                    $row
+                );
             }
 
             return $this->fail(
-                "Status \"{$status}\" is invalid. Allowed values: ".implode(', ', TaskStatus::manualValues()).'.',
+                'Status "'.$status.'" tidak valid. Nilai yang diperbolehkan: '
+                    .implode(', ', TaskStatus::manualValues()).'.',
                 $row
             );
         }
@@ -147,22 +202,19 @@ class TasksImport implements ToCollection, WithHeadingRow
             'desc' => $desc !== '' ? $desc : null,
             'start_date' => $start,
             'deadline' => $deadlineValue,
-            'status' => $status,
+            'status' => $normalized->value,
         ];
     }
 
+    /**
+     * Catat kegagalan untuk baris yang sedang divalidasi.
+     */
     protected function fail(string $reason, Collection $row): null
     {
         $this->addError($this->currentRowNumber, $reason);
 
         return null;
     }
-
-    /**
-     * Nomor baris file untuk row yang sedang divalidasi.
-     * Dipasang di loop collection().
-     */
-    protected int $currentRowNumber = 0;
 
     protected function addError(int $rowNumber, string $reason): void
     {
@@ -172,6 +224,18 @@ class TasksImport implements ToCollection, WithHeadingRow
     protected function stringValue(Collection $row, string $key): string
     {
         $value = $row->get($key);
+
+        // Coba header alternatif (mis. kolom "Deskripsi" untuk "description").
+        if ($value === null || $value === '') {
+            foreach (self::HEADER_ALIASES[$key] ?? [] as $alias) {
+                $candidate = $row->get($alias);
+
+                if ($candidate !== null && $candidate !== '') {
+                    $value = $candidate;
+                    break;
+                }
+            }
+        }
 
         if ($value === null) {
             return '';
@@ -186,19 +250,6 @@ class TasksImport implements ToCollection, WithHeadingRow
 
         return trim((string) $value);
     }
-
-    /**
-     * Daftar format tanggal yang diterima. `d/m/Y` mengikuti format
-     * tampilan Indonesia, `Y-m-d` mengikuti format umum hasil export.
-     */
-    protected const DATE_FORMATS = [
-        'Y-m-d H:i:s',
-        'Y-m-d H:i',
-        'Y-m-d',
-        'd/m/Y H:i:s',
-        'd/m/Y H:i',
-        'd/m/Y',
-    ];
 
     protected function parseDate(string $value): ?Carbon
     {

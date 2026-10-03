@@ -15,12 +15,12 @@ class RegisterController extends Controller
 {
     public function create(): View
     {
-        return view('auth.register');
+        return view('auth.auth', ['mode' => 'register']);
     }
 
     /**
-     * Registrasi hanya untuk trainee (guard web). Admin tidak dapat
-     * didaftarkan melalui form ini.
+     * Registrasi publik selalu membuat akun trainee. Akun admin hanya
+     * dapat dibuat melalui AdminSeeder.
      */
     public function store(Request $request): RedirectResponse
     {
@@ -34,12 +34,12 @@ class RegisterController extends Controller
 
         event(new Registered($user));
 
-        Auth::guard('web')->login($user);
+        Auth::login($user);
 
         $request->session()->regenerate();
 
         return redirect()
             ->route('dashboard')
-            ->with('status', 'Account created successfully.');
+            ->with('status', 'Akun berhasil dibuat.');
     }
 }

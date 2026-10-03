@@ -1,0 +1,17 @@
+# MEeLData - penjadwal Laravel
+#
+# Cara memasang:
+#     crontab deploy/crontab.meeldata
+#
+# Cara melepas:
+#     crontab -e      # hapus baris di bawah, lalu simpan
+#
+# Isi file ini hanya SATU baris. Jadwal apa yang dijalankan
+# didefinisikan di dalam proyek (routes/console.php):
+#     * * * * *  tasks:mark-late     -> tandai task lewat deadline jadi `late`
+#     5 0 * * *  tasks:archive-late  -> soft-delete task `late` yang sudah lewat masa tenggang
+#
+# Ganti /opt/lampp/htdocs/MEeLData kalau lokasi proyek dipindah.
+# >> /dev/null 2>&1 suppressing output supaya tidak mengemail tiap menit.
+
+* * * * * cd /opt/lampp/htdocs/MEeLData && php artisan schedule:run >> /dev/null 2>&1

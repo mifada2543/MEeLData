@@ -1,5 +1,5 @@
 @props([
-    'variant' => 'primary',   // primary | secondary | ghost | danger | dangerSoft
+    'variant' => 'primary',   // primary | alt | secondary | ghost | danger | dangerSoft
     'size' => 'md',           // sm | md
     'href' => null,
     'type' => 'button',
@@ -16,6 +16,8 @@
 
     $variants = [
         'primary' => 'bg-accent text-white hover:bg-accent-hover',
+        // Aksen sekunder, khusus halaman auth (card Create account).
+        'alt' => 'bg-accent-alt text-white hover:bg-accent-alt-hover',
         'secondary' => 'border border-line-strong bg-surface text-ink hover:bg-surface-hover',
         'ghost' => 'text-ink-soft hover:bg-surface-hover hover:text-ink',
         'danger' => 'bg-late text-white hover:opacity-90',

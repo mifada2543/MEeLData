@@ -17,8 +17,8 @@ class TaskCrudTest extends TestCase
             'trainee_id' => null,
             'task' => 'Maintenance Kabel',
             'desc' => 'Perbaikan kabel jaringan.',
-            'start_date' => '2026-10-01 09:00:00',
-            'deadline' => '2026-10-05 17:00:00',
+            'start_date' => now()->addDays(0)->format('Y-m-d H:i:s'),
+            'deadline' => now()->addDays(4)->format('Y-m-d H:i:s'),
             'status' => 'progress',
         ], $overrides);
     }
@@ -28,7 +28,7 @@ class TaskCrudTest extends TestCase
         $admin = $this->admin();
         $trainee = $this->trainee();
 
-        $response = $this->actingAs($admin, 'admin')
+        $response = $this->actingAs($admin, 'web')
             ->post(route('admin.tasks.store'), $this->validPayload([
                 'trainee_id' => $trainee->id,
             ]));
@@ -46,7 +46,7 @@ class TaskCrudTest extends TestCase
         $admin = $this->admin();
         $trainee = $this->trainee();
 
-        $this->actingAs($admin, 'admin')->post(route('admin.tasks.store'), $this->validPayload([
+        $this->actingAs($admin, 'web')->post(route('admin.tasks.store'), $this->validPayload([
             'trainee_id' => $trainee->id,
         ]));
 
@@ -65,6 +65,22 @@ class TaskCrudTest extends TestCase
             ->post(route('admin.tasks.store'), $this->validPayload(['trainee_id' => null]));
 
         $response->assertSessionHasErrors('trainee_id');
+    }
+
+    public function test_admin_account_cannot_be_assigned_as_trainee(): void
+    {
+        // Akun admin berada di tabel yang sama dengan trainee, jadi harus
+        // ditolak oleh validasi server (bukan hanya disembunyikan di UI).
+        $admin = $this->admin();
+
+        $response = $this->actingAs($admin, 'web')
+            ->from(route('admin.tasks.create'))
+            ->post(route('admin.tasks.store'), $this->validPayload([
+                'trainee_id' => $admin->id,
+            ]));
+
+        $response->assertSessionHasErrors('trainee_id');
+        $this->assertDatabaseMissing('trainee_tasks', ['trainee_id' => $admin->id]);
     }
 
     public function test_create_validates_required_fields(): void
@@ -87,8 +103,8 @@ class TaskCrudTest extends TestCase
             ->from(route('admin.tasks.create'))
             ->post(route('admin.tasks.store'), $this->validPayload([
                 'trainee_id' => $this->trainee()->id,
-                'start_date' => '2026-10-10 09:00:00',
-                'deadline' => '2026-10-01 09:00:00',
+                'start_date' => now()->addDays(9)->format('Y-m-d H:i:s'),
+                'deadline' => now()->addDays(0)->format('Y-m-d H:i:s'),
             ]));
 
         $response->assertSessionHasErrors('deadline');
@@ -136,8 +152,8 @@ class TaskCrudTest extends TestCase
         $response = $this->authAsAdmin()->put(route('admin.tasks.update', $task), [
             'task' => 'Updated Task',
             'desc' => 'Updated description.',
-            'start_date' => '2026-10-02 09:00:00',
-            'deadline' => '2026-10-06 17:00:00',
+            'start_date' => now()->addDays(1)->format('Y-m-d H:i:s'),
+            'deadline' => now()->addDays(5)->format('Y-m-d H:i:s'),
         ]);
 
         $response->assertRedirect(route('admin.tasks.index'));
@@ -194,8 +210,8 @@ class TaskCrudTest extends TestCase
         $response = $this->actingAs($trainee, 'web')->put(route('tasks.update', $task), [
             'task' => 'Updated by trainee',
             'desc' => 'Updated.',
-            'start_date' => '2026-10-02 09:00:00',
-            'deadline' => '2026-10-06 17:00:00',
+            'start_date' => now()->addDays(1)->format('Y-m-d H:i:s'),
+            'deadline' => now()->addDays(5)->format('Y-m-d H:i:s'),
         ]);
 
         $response->assertRedirect(route('tasks.index'));

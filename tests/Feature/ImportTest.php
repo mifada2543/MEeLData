@@ -60,8 +60,8 @@ class ImportTest extends TestCase
 
         $file = $this->makeXlsx([
             $this->header(),
-            ['andi@example.com', 'Task A', 'Desc A', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'progress'],
-            ['andi@example.com', 'Task B', 'Desc B', '2026-10-02 09:00:00', '2026-10-06 17:00:00', 'done'],
+            ['andi@example.com', 'Task A', 'Desc A', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
+            ['andi@example.com', 'Task B', 'Desc B', now()->addDays(1)->format('Y-m-d H:i:s'), now()->addDays(5)->format('Y-m-d H:i:s'), 'done'],
         ]);
 
         $response = $this->authAsAdmin()
@@ -82,13 +82,13 @@ class ImportTest extends TestCase
         $file = $this->makeXlsx([
             $this->header(),
             // Row 2: valid
-            ['andi@example.com', 'Valid Task', 'Desc', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'progress'],
+            ['andi@example.com', 'Valid Task', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
             // Row 3: trainee tidak ditemukan
-            ['nobody@example.com', 'Unknown Trainee', 'Desc', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'progress'],
+            ['nobody@example.com', 'Unknown Trainee', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
             // Row 4: deadline invalid
-            ['andi@example.com', 'Bad Deadline', 'Desc', '2026-10-01 09:00:00', 'not-a-date', 'progress'],
+            ['andi@example.com', 'Bad Deadline', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), 'not-a-date', 'progress'],
             // Row 5: status late ditolak
-            ['andi@example.com', 'Late Task', 'Desc', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'late'],
+            ['andi@example.com', 'Late Task', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'late'],
         ]);
 
         $response = $this->authAsAdmin()
@@ -110,8 +110,8 @@ class ImportTest extends TestCase
 
         $reasons = $errors->pluck('reason')->implode(' | ');
         $this->assertStringContainsString('nobody@example.com', $reasons);
-        $this->assertStringContainsString('not a valid date', $reasons);
-        $this->assertStringContainsString('"late" is not allowed', $reasons);
+        $this->assertStringContainsString('tidak valid', $reasons);
+        $this->assertStringContainsString('"late"/"Terlambat" tidak diperbolehkan', $reasons);
     }
 
     public function test_row_without_trainee_email_fails(): void
@@ -120,7 +120,7 @@ class ImportTest extends TestCase
 
         $file = $this->makeXlsx([
             $this->header(),
-            ['', 'No Email', 'Desc', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'progress'],
+            ['', 'No Email', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
         ]);
 
         $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
@@ -129,7 +129,7 @@ class ImportTest extends TestCase
 
         $errors = collect(session('import_errors'));
         $this->assertSame(2, $errors->first()['row']);
-        $this->assertStringContainsString('Trainee email is required', $errors->first()['reason']);
+        $this->assertStringContainsString('Email trainee wajib diisi', $errors->first()['reason']);
     }
 
     public function test_row_without_task_name_fails(): void
@@ -138,14 +138,14 @@ class ImportTest extends TestCase
 
         $file = $this->makeXlsx([
             $this->header(),
-            ['andi@example.com', '', 'Desc', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'progress'],
+            ['andi@example.com', '', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
         ]);
 
         $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
 
         $this->assertDatabaseCount('trainee_tasks', 0);
         $this->assertStringContainsString(
-            'Task is required',
+            'Nama tugas wajib diisi',
             collect(session('import_errors'))->first()['reason'],
         );
     }
@@ -156,7 +156,7 @@ class ImportTest extends TestCase
 
         $file = $this->makeXlsx([
             $this->header(),
-            ['andi@example.com', 'No Description', '', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'progress'],
+            ['andi@example.com', 'No Description', '', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
         ]);
 
         $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
@@ -173,14 +173,14 @@ class ImportTest extends TestCase
 
         $file = $this->makeXlsx([
             $this->header(),
-            ['andi@example.com', 'Reversed', 'Desc', '2026-10-10 09:00:00', '2026-10-01 09:00:00', 'progress'],
+            ['andi@example.com', 'Reversed', 'Desc', now()->addDays(9)->format('Y-m-d H:i:s'), now()->addDays(0)->format('Y-m-d H:i:s'), 'progress'],
         ]);
 
         $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
 
         $this->assertDatabaseCount('trainee_tasks', 0);
         $this->assertStringContainsString(
-            'after or equal to start date',
+            'harus sama dengan atau setelah tanggal mulai',
             collect(session('import_errors'))->first()['reason'],
         );
     }
@@ -191,14 +191,14 @@ class ImportTest extends TestCase
 
         $file = $this->makeXlsx([
             $this->header(),
-            ['andi@example.com', 'Bad Status', 'Desc', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'completed'],
+            ['andi@example.com', 'Bad Status', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'completed'],
         ]);
 
         $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
 
         $this->assertDatabaseCount('trainee_tasks', 0);
         $this->assertStringContainsString(
-            'is invalid',
+            'tidak valid',
             collect(session('import_errors'))->first()['reason'],
         );
     }
@@ -209,14 +209,14 @@ class ImportTest extends TestCase
 
         $file = $this->makeXlsx([
             $this->header(),
-            ['andi@example.com', 'Late Status', 'Desc', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'late'],
+            ['andi@example.com', 'Late Status', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'late'],
         ]);
 
         $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
 
         $this->assertDatabaseCount('trainee_tasks', 0);
         $this->assertStringContainsString(
-            '"late" is not allowed',
+            '"late"/"Terlambat" tidak diperbolehkan',
             collect(session('import_errors'))->first()['reason'],
         );
     }
@@ -227,7 +227,7 @@ class ImportTest extends TestCase
 
         $file = $this->makeXlsx([
             $this->header(),
-            ['andi@example.com', 'Default Status', 'Desc', '2026-10-01 09:00:00', '2026-10-05 17:00:00', ''],
+            ['andi@example.com', 'Default Status', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), ''],
         ]);
 
         $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
@@ -244,8 +244,8 @@ class ImportTest extends TestCase
 
         $file = $this->makeXlsx([
             $this->header(),
-            ['andi@example.com', 'Duplicate', 'Desc', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'progress'],
-            ['andi@example.com', 'Duplicate', 'Desc', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'progress'],
+            ['andi@example.com', 'Duplicate', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
+            ['andi@example.com', 'Duplicate', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
         ]);
 
         $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
@@ -298,8 +298,8 @@ class ImportTest extends TestCase
 
         $file = $this->makeXlsx([
             $this->header(),
-            ['andi@example.com', 'For Andi', 'Desc', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'progress'],
-            ['budi@example.com', 'For Budi', 'Desc', '2026-10-01 09:00:00', '2026-10-05 17:00:00', 'progress'],
+            ['andi@example.com', 'For Andi', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
+            ['budi@example.com', 'For Budi', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
         ]);
 
         $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
@@ -319,16 +319,16 @@ class ImportTest extends TestCase
                 'trainee_email' => 'andi@example.com',
                 'task' => 'Valid',
                 'description' => 'desc',
-                'start_date' => '2026-10-01 09:00:00',
-                'deadline' => '2026-10-05 17:00:00',
+                'start_date' => now()->addDays(0)->format('Y-m-d H:i:s'),
+                'deadline' => now()->addDays(4)->format('Y-m-d H:i:s'),
                 'status' => 'progress',
             ],
             (object) [
                 'trainee_email' => 'missing@example.com',
                 'task' => 'Invalid',
                 'description' => 'desc',
-                'start_date' => '2026-10-01 09:00:00',
-                'deadline' => '2026-10-05 17:00:00',
+                'start_date' => now()->addDays(0)->format('Y-m-d H:i:s'),
+                'deadline' => now()->addDays(4)->format('Y-m-d H:i:s'),
                 'status' => 'progress',
             ],
         ]));
@@ -336,5 +336,88 @@ class ImportTest extends TestCase
         $this->assertSame(1, $import->imported());
         $this->assertCount(1, $import->errors());
         $this->assertSame(3, $import->errors()[0]['row']);
+    }
+
+    public function test_import_accepts_indonesian_headers_and_status_labels(): void
+    {
+        // File hasil ekspor memakai header Bahasa Indonesia; impor harus
+        // menerimanya kembali agar round-trip berjalan.
+        $trainee = $this->trainee(['email' => 'andi@example.com']);
+
+        $path = tempnam(sys_get_temp_dir(), 'import-id-').'.xlsx';
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray([
+            'Email Trainee', 'Tugas', 'Deskripsi', 'Tanggal Mulai', 'Tanggal Deadline', 'Status',
+        ], null, 'A1');
+        $sheet->fromArray([
+            'andi@example.com', 'Tugas Berbahasa', 'Deskripsi', now()->addDay()->format('d/m/Y H:i'), now()->addDays(4)->format('d/m/Y H:i'), 'Selesai',
+        ], null, 'A2');
+        (new Xlsx($spreadsheet))->save($path);
+
+        $this->authAsAdmin()->post(route('admin.tasks.import'), [
+            'file' => new UploadedFile($path, 'tasks.xlsx', null, null, true),
+        ]);
+
+        $this->assertDatabaseHas('trainee_tasks', [
+            'trainee_id' => $trainee->id,
+            'task' => 'Tugas Berbahasa',
+            'status' => 'done',
+        ]);
+
+        @unlink($path);
+    }
+
+    public function test_import_still_accepts_technical_english_headers(): void
+    {
+        // Header teknis lama harus tetap bisa dipakai.
+        $trainee = $this->trainee(['email' => 'andi@example.com']);
+
+        $path = tempnam(sys_get_temp_dir(), 'import-en-').'.xlsx';
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray([
+            'trainee_email', 'task', 'description', 'start_date', 'deadline', 'status',
+        ], null, 'A1');
+        $sheet->fromArray([
+            'andi@example.com', 'Technical Header', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress',
+        ], null, 'A2');
+        (new Xlsx($spreadsheet))->save($path);
+
+        $this->authAsAdmin()->post(route('admin.tasks.import'), [
+            'file' => new UploadedFile($path, 'tasks.xlsx', null, null, true),
+        ]);
+
+        $this->assertDatabaseHas('trainee_tasks', ['task' => 'Technical Header']);
+
+        @unlink($path);
+    }
+
+    public function test_import_rejects_indonesian_late_label(): void
+    {
+        $this->trainee(['email' => 'andi@example.com']);
+
+        $path = tempnam(sys_get_temp_dir(), 'import-late-').'.xlsx';
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray([
+            'Email Trainee', 'Tugas', 'Deskripsi', 'Tanggal Mulai', 'Tanggal Deadline', 'Status',
+        ], null, 'A1');
+        $sheet->fromArray([
+            'andi@example.com', 'Terlambat', 'Desc', now()->addDay()->format('d/m/Y H:i'), now()->addDays(4)->format('d/m/Y H:i'), 'Terlambat',
+        ], null, 'A2');
+        (new Xlsx($spreadsheet))->save($path);
+
+        $this->authAsAdmin()->post(route('admin.tasks.import'), [
+            'file' => new UploadedFile($path, 'tasks.xlsx', null, null, true),
+        ]);
+
+        $this->assertDatabaseCount('trainee_tasks', 0);
+        $this->assertStringContainsString(
+            'tidak diperbolehkan',
+            collect(session('import_errors'))->first()['reason']
+        );
+
+        @unlink($path);
     }
 }

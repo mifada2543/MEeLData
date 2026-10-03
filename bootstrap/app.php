@@ -1,11 +1,9 @@
 <?php
 
-use Illuminate\Auth\AuthenticationException;
+use App\Models\User;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -14,28 +12,16 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Dua guard memakai satu konfigurasi redirect, sehingga callback-nya
-        // menerima Request dan memilih tujuan sesuai area rute.
-        $middleware->redirectGuestsTo(
-            fn (Request $request) => $request->routeIs('admin.*')
-                ? route('admin.login')
-                : route('login')
-        );
-
+        // Satu guard (`web`) untuk admin maupun trainee, sehingga redirect
+        // cukup memakai konfigurasi Laravel standar. Tujuan setelah login
+        // mengikuti role akun.
+        $middleware->redirectGuestsTo(fn () => route('login'));
         $middleware->redirectUsersTo(
-            fn (Request $request) => $request->routeIs('admin.*')
+            fn () => User::isAdminActor(request()->user())
                 ? route('admin.dashboard')
                 : route('dashboard')
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        // Trainee yang accessing route admin harus mendapat 403, bukan redirect
-        // ke form login admin. Guest tetap diarahkan ke halaman login.
-        $exceptions->render(function (AuthenticationException $e, Request $request) {
-            if ($request->routeIs('admin.*') && Auth::guard('web')->check()) {
-                return response()->view('errors.403', status: 403);
-            }
-
-            return null;
-        });
+        //
     })->create();
