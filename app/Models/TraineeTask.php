@@ -209,14 +209,6 @@ class TraineeTask extends Model
     }
 
     /**
-     * @param  Builder<TraineeTask>  $query
-     */
-    public function scopeStatusIn(Builder $query, array $statuses): Builder
-    {
-        return $query->whereIn($query->qualifyColumn('status'), $statuses);
-    }
-
-    /**
      * Urutan prioritas kerja, dari paling tinggi ke paling rendah:
      *
      * 1. Sedang dikerjakan    - `progress` yang deadline-nya belum lewat
