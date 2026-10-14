@@ -178,7 +178,7 @@ class FilterAndExportTest extends TestCase
         $export = new TasksExport(TraineeTask::visibleTo($trainee));
 
         $this->assertSame([
-            'UUID', 'Trainee', 'Tugas', 'Deskripsi', 'Tanggal Mulai',
+            'UUID', 'Trainee', 'Email Trainee', 'Tugas', 'Deskripsi', 'Tanggal Mulai',
             'Tanggal Deadline', 'Status', 'Dibuat Pada', 'Diperbarui Pada',
         ], $export->headings());
 
@@ -186,9 +186,11 @@ class FilterAndExportTest extends TestCase
 
         $this->assertSame($task->id, $row[0]);
         $this->assertSame($trainee->name, $row[1]);
-        $this->assertSame('Maintenance Kabel', $row[2]);
-        $this->assertSame('Perbaikan kabel', $row[3]);
-        $this->assertSame('progress', $row[6]);
+        // Email wajib ada supaya file ekspor bisa diimpor kembali.
+        $this->assertSame($trainee->email, $row[2]);
+        $this->assertSame('Maintenance Kabel', $row[3]);
+        $this->assertSame('Perbaikan kabel', $row[4]);
+        $this->assertSame('progress', $row[7]);
     }
 
     public function test_import_template_is_available_to_admin(): void

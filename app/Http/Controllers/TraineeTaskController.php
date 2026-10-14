@@ -320,10 +320,28 @@ class TraineeTaskController extends Controller
                 ->with('import_failed', 'Impor gagal. Berkas harus berupa file Excel .xlsx yang valid.');
         }
 
-        return back()->with([
-            'imported_count' => $import->imported(),
-            'import_errors' => $import->errors(),
-        ]);
+        $imported = $import->imported();
+        $errors = $import->errors();
+
+        $payload = [
+            'imported_count' => $imported,
+            'import_errors' => $errors,
+        ];
+
+        /*
+         * Umpan balik langsung. Tanpa pesan ini satu-satunya penanda adalah
+         * banner "Hasil Impor" yang mudah terlewat, sehingga pengguna mengira
+         * imporannya gagal dan mengulang - padahal barisnya sudah masuk.
+         */
+        if ($imported > 0) {
+            $payload['status'] = $errors === []
+                ? "Impor berhasil. {$imported} tugas baru ditambahkan."
+                : "Impor selesai. {$imported} tugas ditambahkan, ".count($errors).' baris gagal.';
+        } elseif ($errors !== []) {
+            $payload['import_failed'] = 'Tidak ada baris yang berhasil diimpor. '.count($errors).' baris gagal.';
+        }
+
+        return back()->with($payload);
     }
 
     public function importTemplate()

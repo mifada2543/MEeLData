@@ -3,8 +3,16 @@
     $errors = session('import_errors', []);
 @endphp
 
-{{-- Laporan hasil import: sukses + detail kegagalan per nomor baris Excel. --}}
-<section aria-labelledby="import-result-title" class="mb-4 overflow-hidden rounded-xl border border-line bg-surface shadow-xs">
+{{-- Laporan hasil import: sukses + detail kegagalan per nomor baris Excel.
+     Banner digulirkan ke tengah layar otomatis supaya pengguna langsung
+     melihat hasilnya setelah modal tertutup, bukan mengira impor gagal. --}}
+<section
+    id="import-result"
+    aria-labelledby="import-result-title"
+    class="mb-4 overflow-hidden rounded-xl border border-line bg-surface shadow-xs"
+    x-data
+    x-init="$nextTick(() => $el.scrollIntoView({ behavior: 'smooth', block: 'center' }))"
+>
     <header class="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
         <h2 id="import-result-title" class="text-sm font-semibold text-ink">Hasil Impor</h2>
 

@@ -242,6 +242,57 @@ class UiRenderTest extends TestCase
         );
     }
 
+    /**
+     * Dropdown status harus tetap menempel pada tombolnya saat tabel digeser.
+     *
+     * `.table-scroll` memakai `contain: paint`, jadi ia jadi containing block
+     * untuk `position: fixed`. Koordinat menu dihitung dari kotak wadah SETELAH
+     * digeser - artinya `scrollLeft`/`scrollTop` wajib ikut dikurangkan. Tanpa
+     * itu menu meleset sebesar nilai scroll: di 1024px (tabel tergeser 240px)
+     * menu tampak ~320px di kiri tombolnya, persis keluhan "status dropdownnya
+     * tidak sesuai dengan buttonnya".
+     */
+    public function test_status_dropdown_position_compensates_for_scrolled_container(): void
+    {
+        TraineeTask::factory()->create(['status' => TaskStatus::Progress]);
+
+        $html = $this->authAsAdmin()->get(route('admin.tasks.index'))
+            ->assertOk()->getContent();
+
+        // Blok x-data milik <x-status-select> - ditandai `fixedHost()`,
+        // karena halaman ini punya beberapa komponen Alpine lain.
+        preg_match_all('/x-data="\{.*?\}"/s', $html, $all);
+
+        $script = '';
+        foreach ($all[0] as $candidate) {
+            if (str_contains($candidate, 'fixedHost()')) {
+                $script = $candidate;
+                break;
+            }
+        }
+
+        $this->assertNotSame('', $script, 'Blok position() pada <x-status-select> tidak ditemukan.');
+
+        $this->assertStringContainsString(
+            'host.scrollLeft',
+            $script,
+            'Offset menu wajib mengurangi scrollLeft wadah, kalau tidak menu meleset saat tabel digeser.',
+        );
+        $this->assertStringContainsString(
+            'host.scrollTop',
+            $script,
+            'Offset menu wajib mengurangi scrollTop wadah, kalau tidak menu meleset saat halaman digeser.',
+        );
+
+        // Menu juga harus menempel ke tombol: rata kiri secara default, dan
+        // pindah ke sisi kanan tombol (bukan ke batas wadah) kalau tidak muat.
+        $this->assertMatchesRegularExpression(
+            '/if \(left \+ w > rightEdge\) left = r\.right - w/',
+            $script,
+            'Menu harus menempel pada sisi kanan tombol saat tidak muat di sisi kiri.',
+        );
+    }
+
     public function test_status_dropdown_offers_only_manual_cases(): void
     {
         TraineeTask::factory()->create(['status' => TaskStatus::Progress]);

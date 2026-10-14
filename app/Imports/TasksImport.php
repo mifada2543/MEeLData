@@ -15,7 +15,7 @@ use PhpOffice\PhpSpreadsheet\Shared\Date;
  * Import task trainee dari Excel dengan partial success.
  *
  * Aturan:
- * - trainee_email harus ditemukan;
+ * - trainee_email harus ditemukan (email, atau nama trainee yang unik);
  * - task wajib ada;
  * - description boleh kosong;
  * - start_date & deadline harus valid;
@@ -24,6 +24,10 @@ use PhpOffice\PhpSpreadsheet\Shared\Date;
  * - duplikat diperbolehkan dan dianggap task baru;
  * - setiap row gagal dilaporkan dengan nomor baris Excel asli
  *   (heading = row 1, sehingga index+2 adalah nomor baris file).
+ *
+ * Tanggal tanpa jam (`Y-m-d`, `d/m/Y`, atau sel Excel bertanggal) dianggap
+ * berlaku sepanjang hari itu: start dibandingkan per hari, dan deadline
+ * disimpan pada penghujung hari (23:59:59) supaya tidak langsung terlambat.
  *
  * Header kolom dan nilai status menerima dua bentuk supaya ramah dipakai:
  * - teknis    : trainee_email, task, description, start_date, deadline, status
@@ -48,6 +52,14 @@ class TasksImport implements ToCollection, WithHeadingRow
     protected array $traineeIds = [];
 
     /**
+     * Cache id trainee per nama (lowercase) untuk file lama yang menulis
+     * nama pada kolom email. Sebuah nama hanya dipakai bila unik.
+     *
+     * @var array<string, array<int, int>>
+     */
+    protected array $traineeIdsByName = [];
+
+    /**
      * Header alternatif untuk setiap kunci internal.
      *
      * Maatwebsite mengubah header menjadi slug lowercase
@@ -59,7 +71,7 @@ class TasksImport implements ToCollection, WithHeadingRow
      * @var array<string, array<int, string>>
      */
     protected const HEADER_ALIASES = [
-        'trainee_email' => ['email_trainee', 'email', 'nama_trainee'],
+        'trainee_email' => ['email_trainee', 'email', 'nama_trainee', 'trainee'],
         'task' => ['tugas', 'nama_tugas'],
         'description' => ['deskripsi', 'keterangan'],
         'start_date' => ['tanggal_mulai', 'mulai'],
@@ -82,12 +94,30 @@ class TasksImport implements ToCollection, WithHeadingRow
         'd/m/Y',
     ];
 
+    /**
+     * Format yang hanya menyebut tanggal, tanpa jam.
+     *
+     * `DateTime::createFromFormat` mengisi komponen yang tidak disebut format
+     * dengan waktu SEKARANG, sehingga "2027-01-05" dihasilkan sebagai
+     * 14:25:54. Akibatnya `isDateOnly` tidak pernah cocok: batas akhir tidak
+     * dijadikan 23:59:59, dan tanggal "hari ini" justru ditolak sebagai lampau
+     * karena dibandingkan per menit.
+     */
+    protected const DATE_ONLY_FORMATS = ['Y-m-d', 'd/m/Y'];
+
     public function collection(Collection $rows): void
     {
-        $this->traineeIds = User::query()
-            ->pluck('id', 'email')
+        $users = User::query()->get(['id', 'email', 'name']);
+
+        $this->traineeIds = $users->pluck('id', 'email')
             ->map(fn ($id) => (int) $id)
             ->all();
+
+        $this->traineeIdsByName = [];
+
+        foreach ($users as $user) {
+            $this->traineeIdsByName[mb_strtolower((string) $user->name)][] = (int) $user->id;
+        }
 
         foreach ($rows as $index => $row) {
             // +2 karena baris pertama pada file adalah heading.
@@ -130,7 +160,9 @@ class TasksImport implements ToCollection, WithHeadingRow
             return $this->fail('Email trainee wajib diisi.', $row);
         }
 
-        if (! isset($this->traineeIds[$email])) {
+        $traineeId = $this->resolveTraineeId($email);
+
+        if ($traineeId === null) {
             return $this->fail('Trainee "'.$email.'" tidak ditemukan.', $row);
         }
 
@@ -155,8 +187,10 @@ class TasksImport implements ToCollection, WithHeadingRow
         }
 
         // Perbandingan per menit, sejalan dengan presisi input
-        // `datetime-local` dan App\Rules\NotBeforeNow.
-        if ($start->startOfMinute()->lt(now()->startOfMinute())) {
+        // `datetime-local` dan App\Rules\NotBeforeNow. Tanggal tanpa jam
+        // dibandingkan per hari (lihat isBeforeNow), sehingga sel Excel
+        // bertanggal tidak selalu ditolak.
+        if ($this->isBeforeNow($start)) {
             return $this->fail('Tanggal mulai tidak boleh sebelum waktu sekarang.', $row);
         }
 
@@ -170,8 +204,16 @@ class TasksImport implements ToCollection, WithHeadingRow
             return $this->fail('Tanggal deadline "'.$deadline.'" tidak valid.', $row);
         }
 
-        if ($deadlineValue->startOfMinute()->lt(now()->startOfMinute())) {
+        $deadlineIsDateOnly = $this->isDateOnly($deadlineValue);
+
+        if ($this->isBeforeNow($deadlineValue)) {
             return $this->fail('Tanggal deadline tidak boleh sebelum waktu sekarang.', $row);
+        }
+
+        // Tanggal tanpa jam berakhir di penghujung harinya, supaya task yang
+        // jatuh tempo hari ini tidak langsung dihitung terlambat oleh scheduler.
+        if ($deadlineIsDateOnly) {
+            $deadlineValue = $deadlineValue->copy()->endOfDay();
         }
 
         if ($deadlineValue->lt($start)) {
@@ -197,13 +239,61 @@ class TasksImport implements ToCollection, WithHeadingRow
         }
 
         return [
-            'trainee_id' => $this->traineeIds[$email],
+            'trainee_id' => $traineeId,
             'task' => $task,
             'desc' => $desc !== '' ? $desc : null,
             'start_date' => $start,
             'deadline' => $deadlineValue,
             'status' => $normalized->value,
         ];
+    }
+
+    /**
+     * Cari id trainee dari nilai kolom email.
+     *
+     * File ekspor lama menulis nama trainee pada kolom itu; nilai non-email
+     * dicocokkan ke nama asalkan namanya unik supaya hasil ekspor lawas tetap
+     * bisa diimpor. Email yang tidak terdaftar tetap ditolak.
+     */
+    protected function resolveTraineeId(string $value): ?int
+    {
+        if (isset($this->traineeIds[$value])) {
+            return $this->traineeIds[$value];
+        }
+
+        if (str_contains($value, '@')) {
+            return null;
+        }
+
+        $matches = $this->traineeIdsByName[mb_strtolower($value)] ?? [];
+
+        return count($matches) === 1 ? $matches[0] : null;
+    }
+
+    /**
+     * Tanggal sudah lewat dibanding waktu sekarang.
+     *
+     * Nilai berjam dibandingkan per menit (presisi input `datetime-local` dan
+     * App\Rules\NotBeforeNow). Tanggal tanpa jam dibandingkan per hari:
+     * "9 Oktober" berarti sepanjang 9 Oktober, jadi tidak ditolak hanya karena
+     * jamnya 00:00.
+     */
+    protected function isBeforeNow(Carbon $date): bool
+    {
+        if ($this->isDateOnly($date)) {
+            return $date->copy()->startOfDay()->lt(now()->startOfDay());
+        }
+
+        return $date->copy()->startOfMinute()->lt(now()->startOfMinute());
+    }
+
+    /**
+     * Tanggal tanpa komponen jam: hasil parse `Y-m-d`/`d/m/Y` maupun sel
+     * Excel bertanggal (dibaca PhpSpreadsheet sebagai 00:00:00).
+     */
+    protected function isDateOnly(Carbon $date): bool
+    {
+        return $date->format('H:i:s') === '00:00:00';
     }
 
     /**
@@ -264,6 +354,13 @@ class TasksImport implements ToCollection, WithHeadingRow
             // createFromFormat dapat menerima tanggal yang tidak lengkap,
             // sehingga hasil harus dibandingkan balik dengan input.
             if ($parsed->format($format) === $value) {
+                // Tanggal tanpa jam dimulai dari tengah malam, bukan waktu
+                // "sekarang" yang diwariskan createFromFormat (lihat
+                // DATE_ONLY_FORMATS).
+                if (in_array($format, self::DATE_ONLY_FORMATS, true)) {
+                    $parsed->startOfDay();
+                }
+
                 return $parsed;
             }
         }

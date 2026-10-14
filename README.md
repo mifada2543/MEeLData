@@ -65,8 +65,17 @@ php artisan migrate --seed
 Jalankan aplikasi:
 
 ```bash
-php artisan serve
+sh deploy/serve.sh
 ```
+
+> Gunakan `sh deploy/serve.sh` - bukan `php artisan serve` - untuk pengembangan.
+> Skrip itu menaikkan `upload_max_filesize` menjadi 12 MB dan `post_max_size`
+> menjadi 16 MB lewat `PHP_INI_SCAN_DIR`, sehingga fitur **Impor Excel** bisa
+> menerima berkas sampai 10 MB seperti yang dijanjikan UI. Dengan default PHP
+> (2 MB) berkas lebih besar dipotong PHP sebelum sampai ke Laravel dan muncul
+> pesan *"Kolom berkas gagal diunggah."*.
+>
+> Untuk production (Apache/FPM), setel nilai yang sama langsung di `php.ini`.
 
 ## 3. Konfigurasi Environment
 
@@ -367,11 +376,14 @@ diperbaiki karena tenggatnya selesai.
 ## 8. Import Excel
 
 Format file `.xlsx`, maksimal **10 MB**. Gunakan tombol **Download Template**
-pada modal import untuk memperoleh header + 1 baris contoh.
+pada modal import untuk memperoleh header + 1 baris contoh. Angka *maks.* di
+modal mengikuti batas efektif server (`upload_max_filesize`), jadi bila
+nilai php.ini lebih kecil, kecilkan file atau naikkan batas php.ini.
 
 Header kolom dan nilai status bisa ditulis **Bahasa Indonesia** maupun bentuk
 teknis. Header dari file ekspor (yang berbahasa Indonesia) bisa langsung
-diimpor kembali.
+diimpor kembali; kolom ekspor menyertakan **Email Trainee** karena import
+menemukan trainee lewat email.
 
 | Header Indonesia | Header teknis | Wajib | Keterangan |
 | --- | --- | :---: | --- |
@@ -381,6 +393,11 @@ diimpor kembali.
 | Tanggal Mulai | `start_date` | Ya | `d/m/Y H:i:s`, `Y-m-d H:i:s`, `Y-m-d`, `d/m/Y` |
 | Tanggal Deadline | `deadline` | Ya | Harus `>= start_date` |
 | Status | `status` | Tidak | `progress` (default), `done`, `canceled` — atau `Progress`, `Selesai`, `Dibatalkan` |
+
+**Tanggal tanpa jam** (`Y-m-d`, `d/m/Y`, atau sel Excel bertanggal) berlaku
+sepanjang hari itu: tanggal mulai dibandingkan per hari, dan deadline disimpan
+pada penghujung hari (`23:59:59`) supaya task yang jatuh tempo hari ini tidak
+langsung berstatus terlambat. Tanggal yang sudah lewat tetap ditolak.
 
 > Nilai status yang **disimpan ke database dan ditulis ke file ekspor** tetap
 > bentuk teknis (`progress`/`done`/`canceled`). Label Bahasa Indonesia hanya

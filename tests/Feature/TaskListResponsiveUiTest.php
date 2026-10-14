@@ -187,6 +187,73 @@ class TaskListResponsiveUiTest extends TestCase
         $this->assertStringContainsString('class="table-scroll"', $html);
     }
 
+    /**
+     * Kolom Status dan Dihapus harus cukup lebar untuk isinya sendiri.
+     *
+     * Di halaman Sampah keduanya berisi teks `whitespace-nowrap` yang panjang:
+     * "terlambat 118 hari 23 jam" + ikon (~150px) dan
+     * "00:05 - otomatis oleh sistem" (~148px). Padding sel 32px per sisi, jadi
+     * keduanya baru muat di kolom 192px (`w-48`).
+     *
+     * Kalau kolomnya sempit, teksnya bocor ke sel sebelah - baris terlihat
+     * "bertabrakan": angka terlambat menimpa sumber penghapusan, dan sumber
+     * penghapusan menyentuh tombol Pulihkan. `table-fixed` tidak menolong karena
+     * `white-space: nowrap` tetap mengabaikan batas kolom.
+     */
+    public function test_trash_status_and_deleted_columns_fit_their_longest_text(): void
+    {
+        $admin = $this->admin();
+        $trainee = $this->trainee();
+        TraineeTask::factory()->late()
+            ->for($trainee, 'trainee')
+            ->create(['deleted_at' => now(), 'deleted_by' => null]);
+
+        $html = $this->actingAs($admin, 'web')->get(route('admin.tasks.trash'))->assertOk()->getContent();
+
+        // Lebar kolom harus sama di header dan sel badannya, kalau tidak
+        // `table-fixed` memakai lebar header dan sel melebar/tersempit sendiri.
+        foreach (['Status', 'Dihapus'] as $column) {
+            $this->assertMatchesRegularExpression(
+                '/<th[^>]*class="table-header-cell w-48">'.preg_quote($column, '/').'<\/th>/',
+                $html,
+                "Kolom {$column} harus w-48 (192px) supaya teksnya tidak bocor ke sel sebelah.",
+            );
+        }
+
+        $this->assertSame(
+            2,
+            substr_count($html, 'table-header-cell w-48'),
+            'Hanya kolom Status dan Dihapus yang butuh w-48.',
+        );
+
+        // Jam harus pindah ke baris pertama: baris kedua dik-cadangkan penuh
+        // untuk sumber penghapusan, kalau tidak teksnya langsung terpotong
+        // oleh `truncate`.
+        preg_match(
+            '/<span class="text-\[12px\] text-ink-faint">\d{2}:\d{2}<\/span>/',
+            $html,
+            $time,
+            PREG_OFFSET_CAPTURE,
+        );
+        $this->assertNotEmpty($time, 'Jam penghapusan tidak ditemukan di kolom Dihapus.');
+
+        $sourcePos = strpos($html, 'otomatis oleh sistem');
+        $this->assertNotFalse($sourcePos, 'Teks sumber penghapusan tidak ditemukan.');
+
+        $this->assertLessThan(
+            $sourcePos,
+            $time[0][1],
+            'Jam penghapusan harus berada di baris pertama, baris kedua dipakai penuh untuk sumber penghapusan.',
+        );
+
+        // Lebar minimum tabel mengikuti jumlah kolom tetap yang baru.
+        $this->assertMatchesRegularExpression(
+            '/table-fixed min-w-\[1040px\]/',
+            $html,
+            'Lebar minimum tabel harus disesuaikan dengan lebar kolom yang baru.',
+        );
+    }
+
     public function test_late_archive_banner_is_only_shown_to_admin(): void
     {
         $admin = $this->admin();

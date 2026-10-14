@@ -420,4 +420,73 @@ class ImportTest extends TestCase
 
         @unlink($path);
     }
+
+    /**
+     * Galat unggahan dari PHP harus jadi pesan jelas, bukan 500.
+     *
+     * Saat berkas melewati `upload_max_filesize`, PHP memotongnya dan mengisi
+     * `$_FILES['file']['error'] = UPLOAD_ERR_INI_SIZE`. `$_POST` masih utuh,
+     * jadi FormRequest tetap jalan dan `withValidator` bisa mengganti pesan
+     * generik "Kolom berkas gagal diunggah." dengan batas server yang sebenarnya.
+     *
+     * Regression: implementasi pertama memanggil `MessageBag::remove()` yang
+     * tidak ada di Laravel 12, sehingga kasus ini justru jadi HTTP 500 - dan
+     * test lama tidak menangkapnya karena berkas uji selalu kecil.
+     */
+    public function test_php_upload_error_becomes_readable_message_not_500(): void
+    {
+        $this->trainee(['email' => 'andi@example.com']);
+
+        $path = tempnam(sys_get_temp_dir(), 'import-big-').'.xlsx';
+        (new Xlsx(new Spreadsheet))->save($path);
+
+        $response = $this->authAsAdmin()->post(route('admin.tasks.import'), [
+            // testMode = true: file benar-benar ada, tetapi kode errornya
+            // disimulasikan sebagai UPLOAD_ERR_INI_SIZE.
+            'file' => new UploadedFile($path, 'besar.xlsx', null, UPLOAD_ERR_INI_SIZE, true),
+        ]);
+
+        // FormRequest gagal -> redirect back. Tujuan persisnya ikut referer,
+        // jadi di sini cukup dipastikan itu redirect, bukan respons galat.
+        $response->assertRedirect();
+        $response->assertSessionHasErrors('file');
+
+        $errors = session('errors')->getBag('default')->get('file');
+        $this->assertCount(1, $errors, 'Galat `file` harus diganti jadi satu pesan yang spesifik.');
+        $this->assertStringContainsString('batas unggahan server', $errors[0]);
+        $this->assertStringNotContainsString('Kolom berkas gagal diunggah', $errors[0]);
+
+        @unlink($path);
+    }
+
+    /**
+     * `post_max_size` terlampaui -> middleware ValidatePostSize melempar 413
+     * sebelum controller jalan, jadi FormRequest tidak pernah ikut. Handler
+     * 413 di bootstrap/app.php yang menanganinya: balik ke halaman tugas dengan
+     * pesan yang menyebut batas server, bukan halaman "Post Too Large".
+     */
+    public function test_post_max_size_overflow_redirects_with_clear_message(): void
+    {
+        $this->trainee(['email' => 'andi@example.com']);
+
+        $path = tempnam(sys_get_temp_dir(), 'import-post-').'.xlsx';
+        (new Xlsx(new Spreadsheet))->save($path);
+
+        $postLimit = \App\Support\UploadLimits::postLimitBytes();
+
+        $response = $this->authAsAdmin()->withServerVariables([
+            'CONTENT_LENGTH' => (string) ($postLimit > 0 ? $postLimit + 1048576 : 999999999),
+        ])->post(route('admin.tasks.import'), [
+            'file' => new UploadedFile($path, 'besar.xlsx', null, null, true),
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHasErrors('file');
+
+        $errors = session('errors')->getBag('default')->get('file');
+        $this->assertStringContainsString('post_max_size', $errors[0]);
+        $this->assertStringNotContainsString('Post Too Large', $errors[0]);
+
+        @unlink($path);
+    }
 }

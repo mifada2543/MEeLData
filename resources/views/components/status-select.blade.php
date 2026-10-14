@@ -96,15 +96,24 @@
             // supaya menu tidak keluar dari `overflow` maupun dari layar.
             const pad = 8
             const minX = Math.max(hb.left, 0) + pad
-            const maxX = Math.min(host ? hb.right : innerWidth, innerWidth) - w - pad
+            const rightEdge = Math.min(host ? hb.right : innerWidth, innerWidth) - pad
+            const maxX = rightEdge - w
             const minY = Math.max(hb.top, 0) + pad
-            const maxY = Math.min(host ? hb.bottom : innerHeight, innerHeight) - h - pad
+            const maxY = Math.max(minY, Math.min(host ? hb.bottom : innerHeight, innerHeight) - h - pad)
 
-            const left = Math.max(minX, Math.min(r.left, maxX))
+            // Menu menempel ke sisi kiri tombol. Kalau tidak muat, digeser ke
+            // sisi KANAN tombol - bukan dilemmas ke batas wadah - supaya tetap
+            // terlihat menempel pada pemicunya meski kolomnya mepet tepi.
+            let left = r.left
+            if (left + w > rightEdge) left = r.right - w
+            left = Math.max(minX, Math.min(left, Math.max(minX, maxX)))
 
-            // Koordinat yang ditulis ke `style` relatif kecontaining block.
-            const offsetX = host ? hb.left : 0
-            const offsetY = host ? hb.top : 0
+            // Koordinat `position: fixed` di dalam wadah bergulir dihitung dari
+            // padding box wadah SETELAH digeser, jadi scrollLeft/scrollTop ikut
+            // dikurangkan. Tanpa ini menu meleset sebesar nilai scroll: begitu
+            // tabel digeser mendatar, menu tampak jauh ke kiri dari tombolnya.
+            const offsetX = host ? hb.left - host.scrollLeft : 0
+            const offsetY = host ? hb.top - host.scrollTop : 0
 
             const below = innerHeight - r.bottom
             const top = below < h + 12

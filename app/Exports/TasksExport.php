@@ -20,7 +20,7 @@ class TasksExport implements FromQuery, WithHeadings, WithMapping
 
     public function query(): Builder
     {
-        return $this->query->with('trainee:id,name');
+        return $this->query->with('trainee:id,name,email');
     }
 
     /**
@@ -31,9 +31,14 @@ class TasksExport implements FromQuery, WithHeadings, WithMapping
         // Header Bahasa Indonesia. Import menerima header ini kembali
         // (lihat TasksImport::HEADER_ALIASES), jadi hasil ekspor tetap
         // bisa langsung diimpor.
+        //
+        // Kolom `Email Trainee` wajib ada: import mencari trainee lewat
+        // email. Sebelumnya hanya ada `Trainee` (berisi nama), sehingga
+        // file ekspor selalu gagal 100% dengan "Email trainee wajib diisi."
         return [
             'UUID',
             'Trainee',
+            'Email Trainee',
             'Tugas',
             'Deskripsi',
             'Tanggal Mulai',
@@ -53,6 +58,7 @@ class TasksExport implements FromQuery, WithHeadings, WithMapping
         return [
             $task->id,
             $task->trainee?->name,
+            $task->trainee?->email,
             $task->task,
             $task->desc,
             $task->start_date?->format('Y-m-d H:i:s'),

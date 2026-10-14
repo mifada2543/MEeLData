@@ -84,15 +84,23 @@
                     tanggal, counter, dan sumber penghapusan tergencet. Dengan
                     `table-fixed`, kolom lebar dipatuhi dan Tugas memakai sisa
                     ruang (isinya sudah `truncate`).
+
+                    Lebar Status dan Dihapus diukur dari isi terpanjangnya,
+                    bukan ditebak: "terlambat 118 hari 23 jam" + ikon butuh
+                    ~150px dan "00:05 - otomatis oleh sistem" ~148px. Padding
+                    sel 32px per sisi, jadi keduanya baru muat di kolom 192px.
+                    Kolom yang lebih sempit membuat teks `whitespace-nowrap`
+                    bocor ke sel sebelah - itulah yang membuat baris terlihat
+                    bertabrakan.
                 --}}
-                <table class="w-full table-fixed min-w-[1000px] border-collapse text-sm">
+                <table class="w-full table-fixed min-w-[1040px] border-collapse text-sm">
                     <thead>
                         <tr class="border-b border-line">
                             <th scope="col" class="table-header-cell">Tugas</th>
-                            <th scope="col" class="table-header-cell w-44">Trainee</th>
+                            <th scope="col" class="table-header-cell w-40">Trainee</th>
                             <th scope="col" class="table-header-cell w-36">Deadline</th>
-                            <th scope="col" class="table-header-cell w-36">Status</th>
-                            <th scope="col" class="table-header-cell w-44">Dihapus</th>
+                            <th scope="col" class="table-header-cell w-48">Status</th>
+                            <th scope="col" class="table-header-cell w-48">Dihapus</th>
                             <th scope="col" class="table-header-cell w-28 text-right">Aksi</th>
                         </tr>
                     </thead>
@@ -122,7 +130,7 @@
                                     @endif
                                 </td>
 
-                                <td class="table-body-cell w-44">
+                                <td class="table-body-cell w-40">
                                     <span class="block truncate text-[13px] text-ink-soft" title="{{ $task->trainee?->name }}">
                                         {{ $task->trainee?->name ?? '—' }}
                                     </span>
@@ -138,7 +146,7 @@
                                     </span>
                                 </td>
 
-                                <td class="table-body-cell w-36">
+                                <td class="table-body-cell w-48">
                                     {{--
                                         Status `late` ditampilkan lewat badge statis
                                         (status milik sistem, tidak bisa diklik).
@@ -167,20 +175,26 @@
                                 </td>
 
                                 {{--
-                                    Tanggal + jam di baris pertama, sumber
-                                    penghapusan di baris kedua. Nama admin dipotong
-                                    satu baris (dengan `title` untuk nilai penuh)
-                                    supaya kolom ini tidak pernah meninggi.
+                                    Tanggal + jam di baris pertama (meniru kolom
+                                    Deadline), sumber penghapusan di baris kedua
+                                    sehingga baris ini punya lebar penuh untuk
+                                    teksnya. Nama admin dipotong satu baris
+                                    (dengan `title` untuk nilai penuh) supaya
+                                    kolom ini tidak pernah meninggi.
                                 --}}
-                                <td class="table-body-cell w-44">
+                                <td class="table-body-cell w-48">
                                     <span class="block whitespace-nowrap text-ink-soft">
                                         {{ $task->deleted_at?->translatedFormat('d M Y') }}
+                                        <span class="text-[12px] text-ink-faint">{{ $task->deleted_at?->format('H:i') }}</span>
                                     </span>
-                                    <span class="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[12px] text-ink-faint">
-                                        <span class="tabular-nums">{{ $task->deleted_at?->format('H:i') }}</span>
-                                        <span aria-hidden="true">·</span>
+                                    {{-- Baris kedua khusus sumber penghapusan. Jam dipindah ke
+                                         baris pertama supaya "otomatis oleh sistem"
+                                         (114px) muat di dalam 160px area konten;
+                                         kalau jam ikut di baris ini, teksnya
+                                         tinggal ~114px dan langsung terpotong. --}}
+                                    <span class="mt-0.5 block truncate text-[12px] text-ink-faint">
                                         @if ($task->deleted_by)
-                                            <span class="truncate" title="{{ $task->deletedBy?->name }}">
+                                            <span title="{{ $task->deletedBy?->name }}">
                                                 oleh {{ $task->deletedBy?->name ?? 'user' }}
                                             </span>
                                         @else
