@@ -95,7 +95,7 @@ class UiRenderTest extends TestCase
             ->assertSee('<select', false);
     }
 
-    public function test_admin_task_list_hides_import_for_trainee(): void
+    public function test_admin_and_trainee_can_open_import_but_only_admin_has_bulk_actions(): void
     {
         $admin = $this->admin();
         $trainee = $this->trainee();
@@ -104,12 +104,15 @@ class UiRenderTest extends TestCase
             ->get(route('admin.tasks.index'))
             ->assertOk()
             ->assertSee('Impor Tugas', false)
+            ->assertSee('action="'.route('admin.tasks.import').'"', false)
             ->assertSee('Hapus Terpilih', false);
 
         $this->actingAs($trainee, 'web')
             ->get(route('tasks.index'))
             ->assertOk()
-            ->assertDontSee('Impor Tugas', false)
+            ->assertSee('Impor Tugas', false)
+            ->assertSee('action="'.route('tasks.import').'"', false)
+            ->assertSee('Tanpa kolom email', false)
             ->assertDontSee('Hapus Terpilih', false)
             ->assertDontSee('bulk-delete-form', false);
     }
@@ -371,7 +374,8 @@ class UiRenderTest extends TestCase
             ->assertSee('Hasil Impor')
             ->assertSee('0 berhasil', false)
             ->assertSee('tidak ditemukan')
-            ->assertSee('nobody@example.com');
+            ->assertSee('nobody@example.com')
+            ->assertSee('Tidak ada baris yang berhasil diimpor', false);
 
         @unlink($path);
     }

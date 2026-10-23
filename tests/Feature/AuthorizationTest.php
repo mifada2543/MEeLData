@@ -247,7 +247,7 @@ class AuthorizationTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_trainee_cannot_import(): void
+    public function test_trainee_cannot_use_admin_import_routes(): void
     {
         $this->authAsTrainee()
             ->post(route('admin.tasks.import'))
@@ -256,6 +256,19 @@ class AuthorizationTest extends TestCase
         $this->authAsTrainee()
             ->get(route('admin.tasks.import.template'))
             ->assertForbidden();
+    }
+
+    public function test_trainee_can_use_own_import_routes(): void
+    {
+        $trainee = $this->trainee();
+
+        $this->authAsTrainee($trainee)
+            ->get(route('tasks.import.template'))
+            ->assertOk();
+
+        $this->authAsTrainee($trainee)
+            ->post(route('tasks.import'))
+            ->assertSessionHasErrors('file');
     }
 
     public function test_guest_is_redirected_to_login_pages(): void

@@ -67,6 +67,11 @@ Route::middleware('auth:web')->group(function () {
     Route::get('tasks/create', [TraineeTaskController::class, 'create'])->name('tasks.create');
     Route::post('tasks', [TraineeTaskController::class, 'store'])->name('tasks.store');
     Route::get('tasks/export', [TraineeTaskController::class, 'export'])->name('tasks.export');
+
+    // Trainee mengimpor untuk dirinya sendiri; kolom email tidak diperlukan.
+    Route::post('tasks/import', [TraineeTaskController::class, 'import'])->name('tasks.import');
+    Route::get('tasks/import/template', [TraineeTaskController::class, 'importTemplate'])->name('tasks.import.template');
+
     Route::get('tasks/{task}/edit', [TraineeTaskController::class, 'edit'])->name('tasks.edit');
     Route::match(['put', 'patch'], 'tasks/{task}', [TraineeTaskController::class, 'update'])->name('tasks.update');
     Route::patch('tasks/{task}/status', [TraineeTaskController::class, 'status'])->name('tasks.status');

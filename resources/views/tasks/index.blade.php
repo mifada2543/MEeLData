@@ -83,9 +83,7 @@
                 menang karena jumlah per kelompok langsung terlihat tanpa
                 harus diklik. Lihat resources/views/tasks/partials/status-filter.blade.php
             --}}
-            @if ($isAdmin)
-                @include('tasks.partials.import-modal')
-            @endif
+            @include('tasks.partials.import-modal')
         </div>
 
         {{-- Filter status + jumlah asli per kelompok. --}}

@@ -215,4 +215,22 @@ class FilterAndExportTest extends TestCase
         // Status contoh harus progress, bukan late.
         $this->assertSame('progress', $row[5]);
     }
+
+    public function test_import_template_for_trainee_omits_email_column(): void
+    {
+        $this->authAsTrainee()
+            ->get(route('tasks.import.template'))
+            ->assertOk();
+
+        $template = new TaskTemplateExport(false);
+
+        $this->assertSame([
+            'Tugas', 'Deskripsi', 'Tanggal Mulai', 'Tanggal Deadline', 'Status',
+        ], $template->headings());
+
+        $row = $template->array()[0];
+
+        $this->assertCount(5, $row);
+        $this->assertSame('progress', $row[4]);
+    }
 }

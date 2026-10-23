@@ -14,8 +14,13 @@ use PhpOffice\PhpSpreadsheet\Shared\Date;
 /**
  * Import task trainee dari Excel dengan partial success.
  *
- * Aturan:
- * - trainee_email harus ditemukan (email, atau nama trainee yang unik);
+ * Aturan pemilik task mengikuti aktor yang sedang login:
+ * - admin: kolom email wajib diisi, formatnya valid, dan email harus
+ *   terdaftar sebagai akun trainee;
+ * - trainee: task selalu masuk ke akun sendiri, kolom email tidak wajib,
+ *   dan baris yang mengisi email ditolak.
+ *
+ * Aturan lainnya:
  * - task wajib ada;
  * - description boleh kosong;
  * - start_date & deadline harus valid;
@@ -45,19 +50,13 @@ class TasksImport implements ToCollection, WithHeadingRow
     protected int $currentRowNumber = 0;
 
     /**
-     * Cache email trainee agar tidak query berulang.
+     * Cache akun berdasarkan email (lowercase) untuk import admin.
      *
-     * @var array<string, int>
+     * @var array<string, array{id: int, role: string}>
      */
-    protected array $traineeIds = [];
+    protected array $usersByEmail = [];
 
-    /**
-     * Cache id trainee per nama (lowercase) untuk file lama yang menulis
-     * nama pada kolom email. Sebuah nama hanya dipakai bila unik.
-     *
-     * @var array<string, array<int, int>>
-     */
-    protected array $traineeIdsByName = [];
+    public function __construct(private readonly User $importer) {}
 
     /**
      * Header alternatif untuk setiap kunci internal.
@@ -71,7 +70,7 @@ class TasksImport implements ToCollection, WithHeadingRow
      * @var array<string, array<int, string>>
      */
     protected const HEADER_ALIASES = [
-        'trainee_email' => ['email_trainee', 'email', 'nama_trainee', 'trainee'],
+        'trainee_email' => ['email_trainee', 'email'],
         'task' => ['tugas', 'nama_tugas'],
         'description' => ['deskripsi', 'keterangan'],
         'start_date' => ['tanggal_mulai', 'mulai'],
@@ -107,16 +106,17 @@ class TasksImport implements ToCollection, WithHeadingRow
 
     public function collection(Collection $rows): void
     {
-        $users = User::query()->get(['id', 'email', 'name']);
+        $this->usersByEmail = [];
 
-        $this->traineeIds = $users->pluck('id', 'email')
-            ->map(fn ($id) => (int) $id)
-            ->all();
-
-        $this->traineeIdsByName = [];
-
-        foreach ($users as $user) {
-            $this->traineeIdsByName[mb_strtolower((string) $user->name)][] = (int) $user->id;
+        // Hanya admin yang perlu mencari pemilik dari kolom email. Trainee
+        // selalu memakai akunnya sendiri, jadi tidak perlu query user.
+        if ($this->importer->isAdmin()) {
+            foreach (User::query()->get(['id', 'email', 'role']) as $user) {
+                $this->usersByEmail[mb_strtolower((string) $user->email)] = [
+                    'id' => (int) $user->id,
+                    'role' => (string) $user->role,
+                ];
+            }
         }
 
         foreach ($rows as $index => $row) {
@@ -155,15 +155,32 @@ class TasksImport implements ToCollection, WithHeadingRow
         $deadline = $this->stringValue($row, 'deadline');
         $status = mb_strtolower($this->stringValue($row, 'status'));
 
-        // Trainee
-        if ($email === '') {
-            return $this->fail('Email trainee wajib diisi.', $row);
-        }
+        // Pemilik task ditentukan oleh role aktor, bukan oleh isi file.
+        if ($this->importer->isAdmin()) {
+            if ($email === '') {
+                return $this->fail('Email trainee wajib diisi. Gunakan kolom Email Trainee.', $row);
+            }
 
-        $traineeId = $this->resolveTraineeId($email);
+            if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+                return $this->fail('Format email trainee "'.$email.'" tidak valid.', $row);
+            }
 
-        if ($traineeId === null) {
-            return $this->fail('Trainee "'.$email.'" tidak ditemukan.', $row);
+            $target = $this->resolveAdminTrainee($email);
+
+            if ($target['id'] === null) {
+                return $this->fail($target['error'] ?? 'Email trainee tidak valid.', $row);
+            }
+
+            $traineeId = $target['id'];
+        } else {
+            // Trainee selalu mengimpor untuk dirinya sendiri. Kolom email
+            // tidak wajib, tetapi bila diisi barisnya ditolak agar file tidak
+            // dapat dipakai untuk menunjuk akun lain.
+            if ($email !== '') {
+                return $this->fail('User tidak boleh mengisi email. Kosongkan kolom Email Trainee.', $row);
+            }
+
+            $traineeId = (int) $this->importer->id;
         }
 
         // Tugas
@@ -249,25 +266,34 @@ class TasksImport implements ToCollection, WithHeadingRow
     }
 
     /**
-     * Cari id trainee dari nilai kolom email.
+     * Cari akun trainee yang dituju admin berdasarkan email.
      *
-     * File ekspor lama menulis nama trainee pada kolom itu; nilai non-email
-     * dicocokkan ke nama asalkan namanya unik supaya hasil ekspor lawas tetap
-     * bisa diimpor. Email yang tidak terdaftar tetap ditolak.
+     * Email dicocokkan tanpa membedakan huruf besar/kecil. Akun yang
+     * ditemukan tetapi bukan trainee (mis. akun admin) tetap ditolak.
+     *
+     * @return array{id: int|null, error: string|null}
      */
-    protected function resolveTraineeId(string $value): ?int
+    protected function resolveAdminTrainee(string $email): array
     {
-        if (isset($this->traineeIds[$value])) {
-            return $this->traineeIds[$value];
+        $key = mb_strtolower($email);
+
+        if (! isset($this->usersByEmail[$key])) {
+            return [
+                'id' => null,
+                'error' => 'Trainee "'.$email.'" tidak ditemukan.',
+            ];
         }
 
-        if (str_contains($value, '@')) {
-            return null;
+        $user = $this->usersByEmail[$key];
+
+        if ($user['role'] !== User::ROLE_TRAINEE) {
+            return [
+                'id' => null,
+                'error' => 'Email "'.$email.'" bukan akun trainee.',
+            ];
         }
 
-        $matches = $this->traineeIdsByName[mb_strtolower($value)] ?? [];
-
-        return count($matches) === 1 ? $matches[0] : null;
+        return ['id' => $user['id'], 'error' => null];
     }
 
     /**

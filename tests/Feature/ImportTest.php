@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\TaskStatus;
 use App\Imports\TasksImport;
 use App\Models\TraineeTask;
+use App\Support\UploadLimits;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Maatwebsite\Excel\Facades\Excel;
@@ -54,6 +55,11 @@ class ImportTest extends TestCase
         return ['trainee_email', 'task', 'description', 'start_date', 'deadline', 'status'];
     }
 
+    protected function traineeHeader(): array
+    {
+        return ['task', 'description', 'start_date', 'deadline', 'status'];
+    }
+
     public function test_valid_import_creates_tasks(): void
     {
         $trainee = $this->trainee(['email' => 'andi@example.com']);
@@ -95,6 +101,7 @@ class ImportTest extends TestCase
             ->post(route('admin.tasks.import'), ['file' => $file]);
 
         $response->assertSessionHas('imported_count', 1);
+        $response->assertSessionHas('import_failed');
 
         $errors = collect(session('import_errors'));
 
@@ -114,7 +121,7 @@ class ImportTest extends TestCase
         $this->assertStringContainsString('"late"/"Terlambat" tidak diperbolehkan', $reasons);
     }
 
-    public function test_row_without_trainee_email_fails(): void
+    public function test_admin_row_without_trainee_email_fails(): void
     {
         $this->trainee(['email' => 'andi@example.com']);
 
@@ -123,13 +130,72 @@ class ImportTest extends TestCase
             ['', 'No Email', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
         ]);
 
-        $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
+        $response = $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
 
         $this->assertDatabaseCount('trainee_tasks', 0);
+        $response->assertSessionHas('import_failed');
 
         $errors = collect(session('import_errors'));
         $this->assertSame(2, $errors->first()['row']);
         $this->assertStringContainsString('Email trainee wajib diisi', $errors->first()['reason']);
+    }
+
+    public function test_admin_row_with_invalid_email_format_fails(): void
+    {
+        $this->trainee(['email' => 'andi@example.com']);
+
+        $file = $this->makeXlsx([
+            $this->header(),
+            ['bukan-email', 'Invalid Email', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
+        ]);
+
+        $response = $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
+
+        $this->assertDatabaseCount('trainee_tasks', 0);
+        $response->assertSessionHas('import_failed');
+        $this->assertStringContainsString(
+            'Format email trainee',
+            collect(session('import_errors'))->first()['reason'],
+        );
+    }
+
+    public function test_admin_import_without_email_column_rejects_rows(): void
+    {
+        $this->trainee(['email' => 'andi@example.com']);
+
+        $file = $this->makeXlsx([
+            $this->traineeHeader(),
+            ['Tanpa Kolom Email', 'Desc', now()->addDay()->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
+        ]);
+
+        $response = $this->authAsAdmin()->post(route('admin.tasks.import'), ['file' => $file]);
+
+        $this->assertDatabaseCount('trainee_tasks', 0);
+        $response->assertSessionHas('import_failed');
+        $this->assertStringContainsString(
+            'Email trainee wajib diisi',
+            collect(session('import_errors'))->first()['reason'],
+        );
+    }
+
+    public function test_admin_cannot_import_for_admin_account(): void
+    {
+        $admin = $this->admin(['email' => 'admin@example.com']);
+
+        $file = $this->makeXlsx([
+            $this->header(),
+            ['admin@example.com', 'Untuk Admin', 'Desc', now()->addDays(0)->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
+        ]);
+
+        $response = $this->actingAs($admin, 'web')
+            ->post(route('admin.tasks.import'), ['file' => $file]);
+
+        $this->assertDatabaseCount('trainee_tasks', 0);
+        $response->assertSessionHas('import_failed');
+        $this->assertStringContainsString(
+            'bukan akun trainee',
+            collect(session('import_errors'))->first()['reason'],
+        );
     }
 
     public function test_row_without_task_name_fails(): void
@@ -284,7 +350,113 @@ class ImportTest extends TestCase
             ->assertSessionHasErrors('file');
     }
 
-    public function test_trainee_cannot_reach_import(): void
+    public function test_trainee_imports_own_tasks_without_email_column(): void
+    {
+        $trainee = $this->trainee(['email' => 'andi@example.com']);
+
+        $file = $this->makeXlsx([
+            $this->traineeHeader(),
+            ['Task Sendiri', 'Desc', now()->addDay()->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
+        ]);
+
+        $response = $this->authAsTrainee($trainee)
+            ->post(route('tasks.import'), ['file' => $file]);
+
+        $response->assertSessionHas('imported_count', 1);
+        $response->assertSessionHas('import_errors', []);
+        $response->assertSessionHas('status');
+
+        $this->assertDatabaseHas('trainee_tasks', [
+            'trainee_id' => $trainee->id,
+            'task' => 'Task Sendiri',
+        ]);
+    }
+
+    public function test_trainee_import_rejects_filled_email_column(): void
+    {
+        $trainee = $this->trainee(['email' => 'andi@example.com']);
+
+        $file = $this->makeXlsx([
+            $this->header(),
+            ['andi@example.com', 'Task Dengan Email', 'Desc', now()->addDay()->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
+        ]);
+
+        $response = $this->authAsTrainee($trainee)
+            ->post(route('tasks.import'), ['file' => $file]);
+
+        $response->assertSessionHas('imported_count', 0);
+        $response->assertSessionHas('import_failed');
+        $this->assertDatabaseCount('trainee_tasks', 0);
+
+        $errors = collect(session('import_errors'));
+        $this->assertSame(2, $errors->first()['row']);
+        $this->assertStringContainsString('tidak boleh mengisi email', $errors->first()['reason']);
+    }
+
+    public function test_trainee_import_rejects_other_user_email(): void
+    {
+        $trainee = $this->trainee(['email' => 'andi@example.com']);
+        $other = $this->trainee(['email' => 'budi@example.com']);
+
+        $file = $this->makeXlsx([
+            $this->header(),
+            [$other->email, 'Task Untuk Budi', 'Desc', now()->addDay()->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
+        ]);
+
+        $response = $this->authAsTrainee($trainee)
+            ->post(route('tasks.import'), ['file' => $file]);
+
+        $response->assertSessionHas('imported_count', 0);
+        $response->assertSessionHas('import_failed');
+        $this->assertDatabaseCount('trainee_tasks', 0);
+
+        $this->assertStringContainsString(
+            'tidak boleh mengisi email',
+            collect(session('import_errors'))->first()['reason'],
+        );
+    }
+
+    public function test_trainee_import_accepts_empty_email_column(): void
+    {
+        $trainee = $this->trainee(['email' => 'andi@example.com']);
+
+        $file = $this->makeXlsx([
+            $this->header(),
+            ['', 'Email Kosong', 'Desc', now()->addDay()->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
+        ]);
+
+        $response = $this->authAsTrainee($trainee)
+            ->post(route('tasks.import'), ['file' => $file]);
+
+        $response->assertSessionHas('imported_count', 1);
+        $this->assertDatabaseHas('trainee_tasks', [
+            'trainee_id' => $trainee->id,
+            'task' => 'Email Kosong',
+        ]);
+    }
+
+    public function test_trainee_import_accepts_legacy_file_with_name_column(): void
+    {
+        $trainee = $this->trainee(['email' => 'andi@example.com', 'name' => 'Andi']);
+
+        // File ekspor lama hanya punya kolom nama, bukan Email Trainee.
+        // Untuk trainee kolom itu diabaikan dan task tetap milik sendiri.
+        $file = $this->makeXlsx([
+            ['Trainee', 'Tugas', 'Deskripsi', 'Tanggal Mulai', 'Tanggal Deadline', 'Status'],
+            ['Andi', 'File Lama', 'Desc', now()->addDay()->format('Y-m-d H:i:s'), now()->addDays(4)->format('Y-m-d H:i:s'), 'progress'],
+        ]);
+
+        $response = $this->authAsTrainee($trainee)
+            ->post(route('tasks.import'), ['file' => $file]);
+
+        $response->assertSessionHas('imported_count', 1);
+        $this->assertDatabaseHas('trainee_tasks', [
+            'trainee_id' => $trainee->id,
+            'task' => 'File Lama',
+        ]);
+    }
+
+    public function test_trainee_cannot_use_admin_import_route(): void
     {
         $this->authAsTrainee()
             ->post(route('admin.tasks.import'))
@@ -312,7 +484,7 @@ class ImportTest extends TestCase
     {
         $this->trainee(['email' => 'andi@example.com']);
 
-        $import = new TasksImport;
+        $import = new TasksImport($this->admin());
 
         $import->collection(collect([
             (object) [
@@ -472,7 +644,7 @@ class ImportTest extends TestCase
         $path = tempnam(sys_get_temp_dir(), 'import-post-').'.xlsx';
         (new Xlsx(new Spreadsheet))->save($path);
 
-        $postLimit = \App\Support\UploadLimits::postLimitBytes();
+        $postLimit = UploadLimits::postLimitBytes();
 
         $response = $this->authAsAdmin()->withServerVariables([
             'CONTENT_LENGTH' => (string) ($postLimit > 0 ? $postLimit + 1048576 : 999999999),

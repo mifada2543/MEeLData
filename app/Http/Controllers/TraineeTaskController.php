@@ -303,12 +303,17 @@ class TraineeTaskController extends Controller
 
     /**
      * Import Excel (partial success). Row invalid dilaporkan per nomor baris.
+     *
+     * Admin wajib mengisi email trainee; trainee selalu mengimpor untuk
+     * akunnya sendiri. Aturan ini ditentukan dari aktor yang login, bukan
+     * dari isi file.
      */
     public function import(ImportTasksRequest $request): RedirectResponse
     {
-        abort_unless($this->isAdmin(), 403);
+        /** @var User $actor */
+        $actor = $request->user();
 
-        $import = new TasksImport;
+        $import = new TasksImport($actor);
 
         try {
             Excel::import($import, $request->file('file'));
@@ -329,26 +334,27 @@ class TraineeTaskController extends Controller
         ];
 
         /*
-         * Umpan balik langsung. Tanpa pesan ini satu-satunya penanda adalah
-         * banner "Hasil Impor" yang mudah terlewat, sehingga pengguna mengira
-         * imporannya gagal dan mengulang - padahal barisnya sudah masuk.
+         * Umpan balik langsung. Banner "Hasil Impor" memuat rincian per baris,
+         * sedangkan toast memastikan pengguna langsung tahu bahwa ada baris
+         * yang gagal - termasuk saat sebagian baris lain berhasil.
          */
-        if ($imported > 0) {
-            $payload['status'] = $errors === []
-                ? "Impor berhasil. {$imported} tugas baru ditambahkan."
-                : "Impor selesai. {$imported} tugas ditambahkan, ".count($errors).' baris gagal.';
-        } elseif ($errors !== []) {
-            $payload['import_failed'] = 'Tidak ada baris yang berhasil diimpor. '.count($errors).' baris gagal.';
+        if ($errors !== []) {
+            $payload['import_failed'] = $imported > 0
+                ? "Impor selesai. {$imported} tugas ditambahkan, ".count($errors).' baris gagal. Periksa rincian di Hasil Impor.'
+                : 'Tidak ada baris yang berhasil diimpor. '.count($errors).' baris gagal. Periksa rincian di Hasil Impor.';
+        } elseif ($imported > 0) {
+            $payload['status'] = "Impor berhasil. {$imported} tugas baru ditambahkan.";
         }
 
         return back()->with($payload);
     }
 
-    public function importTemplate()
+    public function importTemplate(Request $request)
     {
-        abort_unless($this->isAdmin(), 403);
-
-        return Excel::download(new TaskTemplateExport, 'meeldata-task-import-template.xlsx');
+        return Excel::download(
+            new TaskTemplateExport(User::isAdminActor($request->user())),
+            'meeldata-task-import-template.xlsx'
+        );
     }
 
     /**

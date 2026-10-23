@@ -6,10 +6,10 @@ trainee. Dibangun dengan **Laravel 12**, **PHP 8.3**, **Blade**, **Tailwind CSS 
 
 Dua role:
 
-- **Admin** — mengelola seluruh data task, import, export, dan bulk delete.
-  Akun hanya dapat dibuat melalui seeder.
-- **Trainee/User** — melihat dan mengelola task miliknya sendiri. Dapat
-  mendaftarkan akun sendiri melalui halaman registrasi.
+- **Admin** — mengelola seluruh data task, import untuk trainee mana pun,
+  export, dan bulk delete. Akun hanya dapat dibuat melalui seeder.
+- **Trainee/User** — melihat, mengelola, dan mengimpor task miliknya sendiri.
+  Dapat mendaftarkan akun sendiri melalui halaman registrasi.
 
 ---
 
@@ -381,18 +381,28 @@ modal mengikuti batas efektif server (`upload_max_filesize`), jadi bila
 nilai php.ini lebih kecil, kecilkan file atau naikkan batas php.ini.
 
 Header kolom dan nilai status bisa ditulis **Bahasa Indonesia** maupun bentuk
-teknis. Header dari file ekspor (yang berbahasa Indonesia) bisa langsung
-diimpor kembali; kolom ekspor menyertakan **Email Trainee** karena import
-menemukan trainee lewat email.
+teknis. Aturan kolom email ditentukan oleh role yang sedang login:
 
-| Header Indonesia | Header teknis | Wajib | Keterangan |
-| --- | --- | :---: | --- |
-| Email Trainee | `trainee_email` | Ya | Harus terdaftar |
-| Tugas | `task` | Ya | Maks. 255 karakter |
-| Deskripsi | `description` | Tidak | Boleh kosong |
-| Tanggal Mulai | `start_date` | Ya | `d/m/Y H:i:s`, `Y-m-d H:i:s`, `Y-m-d`, `d/m/Y` |
-| Tanggal Deadline | `deadline` | Ya | Harus `>= start_date` |
-| Status | `status` | Tidak | `progress` (default), `done`, `canceled` — atau `Progress`, `Selesai`, `Dibatalkan` |
+- **Admin** wajib mengisi **Email Trainee**; email harus valid dan terdaftar
+  sebagai akun trainee. Baris tanpa email, format email salah, email tidak
+  terdaftar, atau email akun admin ditolak dengan alasan yang terlihat di
+  notifikasi dan tabel **Hasil Impor**.
+- **Trainee/User** tidak perlu kolom email. Semua baris otomatis masuk ke akun
+  yang sedang login. Jika kolom email diisi (termasuk email sendiri), baris
+  tersebut ditolak agar file tidak dapat menunjuk akun lain.
+- Template admin memuat kolom **Email Trainee**; template trainee tidak.
+- File ekspor lama yang hanya berisi kolom nama tetap bisa diimpor oleh
+  trainee karena kolom nama diabaikan. Untuk admin, file lama tanpa email
+  harus dilengkapi **Email Trainee** terlebih dahulu.
+
+| Header Indonesia | Header teknis | Admin | Trainee | Keterangan |
+| --- | --- | :---: | :---: | --- |
+| Email Trainee | `trainee_email` | Wajib | Dilarang diisi | Admin: harus akun trainee terdaftar. Trainee: kosongkan kolomnya |
+| Tugas | `task` | Ya | Ya | Maks. 255 karakter |
+| Deskripsi | `description` | Tidak | Tidak | Boleh kosong |
+| Tanggal Mulai | `start_date` | Ya | Ya | `d/m/Y H:i:s`, `Y-m-d H:i:s`, `Y-m-d`, `d/m/Y` |
+| Tanggal Deadline | `deadline` | Ya | Ya | Harus `>= start_date` |
+| Status | `status` | Tidak | Tidak | `progress` (default), `done`, `canceled` — atau `Progress`, `Selesai`, `Dibatalkan` |
 
 **Tanggal tanpa jam** (`Y-m-d`, `d/m/Y`, atau sel Excel bertanggal) berlaku
 sepanjang hari itu: tanggal mulai dibandingkan per hari, dan deadline disimpan
@@ -405,17 +415,19 @@ langsung berstatus terlambat. Tanggal yang sudah lewat tetap ditolak.
 
 Import memakai **partial success**: baris valid tersimpan, baris invalid
 dilewati dan dilaporkan dengan nomor baris Excel asli (header = baris 1).
+Jika ada baris yang gagal, toast peringatan muncul dan rincian alasannya
+ditampilkan di tabel **Hasil Impor**.
 
 Contoh laporan:
 
 ```
-2 tasks imported successfully.
-4 rows failed and were not imported.
+2 tugas berhasil diimpor.
+4 baris gagal dan tidak diimpor.
 
-Row 3: Trainee "ghost@example.com" was not found.
-Row 4: Status "late" is not allowed. "Late" is set automatically by the system.
-Row 5: Deadline "bad-date" is not a valid date.
-Row 6: Deadline must be after or equal to start date.
+Baris 3: Trainee "ghost@example.com" tidak ditemukan.
+Baris 4: Status "late"/"Terlambat" tidak diperbolehkan. Status tersebut diatur otomatis oleh sistem.
+Baris 5: Tanggal deadline "bad-date" tidak valid.
+Baris 6: Tanggal deadline harus sama dengan atau setelah tanggal mulai.
 ```
 
 Duplikat diperbolehkan dan setiap baris dianggap task baru.
@@ -443,8 +455,13 @@ Query export memakai **scope yang sama** dengan halaman daftar task, sehingga:
   UUID milik trainee lain hanya mendapatkan tasknya sendiri (perlindungan IDOR).
 - Soft-deleted task tidak pernah ikut terk-export, meskipun dipilih.
 
-Kolom: UUID, Trainee, Task, Description, Start Date, Deadline, Status,
-Created At, Updated At.
+Kolom: UUID, Trainee, Email Trainee, Task, Description, Start Date, Deadline,
+Status, Created At, Updated At.
+
+File hasil export bisa diimpor ulang oleh admin karena kolom **Email Trainee**
+sudah terisi. Trainee yang ingin mengimpor ulang file export harus
+mengosongkan atau menghapus kolom **Email Trainee** terlebih dahulu — import
+trainee menolak baris yang mengisi email.
 
 Nama file:
 

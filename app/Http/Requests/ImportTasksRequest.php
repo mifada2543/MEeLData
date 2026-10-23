@@ -52,28 +52,22 @@ class ImportTasksRequest extends FormRequest
      * isi file. Berjalan setelah semua aturan di atas, sehingga pesan generik
      * dari aturan `file`/`required` diganti dengan pesan yang menjelaskan
      * batas server yang sebenarnya.
+     *
+     * CATATAN: kasus `post_max_size` terlampaui TIDAK ditangani di sini.
+     * Middleware `ValidatePostSize` melempar `PostTooLargeException` lebih dulu,
+     * jadi FormRequest tidak pernah dijalankan untuk request sebesar itu.
+     * Penanganannya ada di bootstrap/app.php - satu titik, bukan dua.
      */
-    /**
- * Galat untuk kegagalan yang berasal dari konfigurasi PHP, bukan dari
- * isi file. Berjalan setelah semua aturan di atas, sehingga pesan generik
- * dari aturan `file`/`required` diganti dengan pesan yang menjelaskan
- * batas server yang sebenarnya.
- *
- * CATATAN: kasus `post_max_size` terlampaui TIDAK ditangani di sini.
- * Middleware `ValidatePostSize` melempar `PostTooLargeException` lebih dulu,
- * jadi FormRequest tidak pernah dijalankan untuk request sebesar itu.
- * Penanganannya ada di bootstrap/app.php - satu titik, bukan dua.
- */
-public function withValidator(Validator $validator): void
-{
-    $validator->after(function (Validator $validator): void {
-        $file = $this->file('file');
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            $file = $this->file('file');
 
-        if ($file instanceof UploadedFile && $file->getError() !== UPLOAD_ERR_OK) {
-            $this->replaceError($validator, $this->uploadErrorMessage($file->getError()));
-        }
-    });
-}
+            if ($file instanceof UploadedFile && $file->getError() !== UPLOAD_ERR_OK) {
+                $this->replaceError($validator, $this->uploadErrorMessage($file->getError()));
+            }
+        });
+    }
 
     /**
      * Ganti seluruh galat pada field `file` dengan satu pesan yang jelas.

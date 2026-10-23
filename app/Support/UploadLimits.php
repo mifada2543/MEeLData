@@ -18,7 +18,9 @@ namespace App\Support;
 class UploadLimits
 {
     public const APP_LIMIT_BYTES = 10 * 1024 * 1024;
+
     public const POST_OVERHEAD_BYTES = 1 * 1024 * 1024;
+
     public static function effectiveLimitMb(): string
     {
         $candidates = [
@@ -31,7 +33,7 @@ class UploadLimits
             $candidates[] = $post - self::POST_OVERHEAD_BYTES;
         }
 
-        $candidates = array_values(array_filter($candidates, static fn(int $b): bool => $b > 0));
+        $candidates = array_values(array_filter($candidates, static fn (int $b): bool => $b > 0));
 
         if ($candidates === []) {
             return (string) (self::APP_LIMIT_BYTES / 1048576);

@@ -28,13 +28,13 @@ class TasksExport implements FromQuery, WithHeadings, WithMapping
      */
     public function headings(): array
     {
-        // Header Bahasa Indonesia. Import menerima header ini kembali
-        // (lihat TasksImport::HEADER_ALIASES), jadi hasil ekspor tetap
-        // bisa langsung diimpor.
+        // Header Bahasa Indonesia. Import admin menerima header ini kembali
+        // (lihat TasksImport::HEADER_ALIASES), jadi hasil ekspor bisa
+        // langsung diimpor oleh admin.
         //
-        // Kolom `Email Trainee` wajib ada: import mencari trainee lewat
-        // email. Sebelumnya hanya ada `Trainee` (berisi nama), sehingga
-        // file ekspor selalu gagal 100% dengan "Email trainee wajib diisi."
+        // Kolom `Email Trainee` wajib ada untuk import admin: admin mencari
+        // trainee lewat email. Import trainee menolak kolom email yang
+        // terisi, karena task selalu masuk ke akun yang sedang login.
         return [
             'UUID',
             'Trainee',

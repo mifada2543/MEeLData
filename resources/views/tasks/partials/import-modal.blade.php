@@ -1,12 +1,18 @@
 @php
-    // Import modal (admin only, design.md §14).
+    // Import modal (admin & trainee, design.md §14).
     // Partial success: hasil import dikembalikan ke halaman list sebagai
     // flash `imported_count` + `import_errors`.
+    //
+    // Route dan aturan email mengikuti role aktor: admin memakai route admin
+    // dan wajib mengisi Email Trainee; trainee memakai route biasa dan task
+    // selalu masuk ke akunnya sendiri.
     //
     // Batas ukuran yang ditampilkan diambil dari konfigurasi PHP yang
     // benar-benar berlaku, bukan angka 10 MB yang dikunci di teks - supaya
     // label tidak menjanjikan ukuran yang pada akhirnya ditolak server.
     $maxMb = \App\Support\UploadLimits::effectiveLimitMb();
+    $importIsAdmin = \App\Models\User::isAdminActor(\Illuminate\Support\Facades\Auth::user());
+    $importPrefix = $importIsAdmin ? 'admin.' : '';
 @endphp
 
 <div
@@ -114,7 +120,7 @@
 
             <form
                 method="POST"
-                action="{{ route('admin.tasks.import') }}"
+                action="{{ route($importPrefix.'tasks.import') }}"
                 enctype="multipart/form-data"
                 class="p-6"
                 @submit="onBeforeSubmit($event)"
@@ -194,11 +200,19 @@
                     </p>
                 </div>
 
+                <p class="mt-3 rounded-lg border border-line bg-surface-sunken px-3 py-2 text-xs leading-relaxed text-ink-muted">
+                    @if ($importIsAdmin)
+                        Kolom <span class="font-medium text-ink">Email Trainee</span> wajib diisi dan harus akun trainee yang terdaftar. Baris tanpa email akan ditolak.
+                    @else
+                        Tanpa kolom email. Semua baris akan masuk ke akun Anda. Jika kolom <span class="font-medium text-ink">Email Trainee</span> diisi, baris tersebut akan ditolak.
+                    @endif
+                </p>
+
                 <x-field-error name="file" />
 
                 <div class="mt-6 flex items-center justify-between gap-3">
                     <a
-                        href="{{ route('admin.tasks.import.template') }}"
+                        href="{{ route($importPrefix.'tasks.import.template') }}"
                         class="inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-soft underline-offset-4 transition-colors hover:text-ink hover:underline"
                     >
                         <x-icon name="download" class="size-3.5" />
