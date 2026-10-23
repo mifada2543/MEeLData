@@ -33,7 +33,8 @@ class TraineeTaskController extends Controller
     {
         $status = $this->validateStatusFilter($request);
 
-        $scoped = fn () => $this->visibleTasks($request->user())->statusIs($status);
+        $base = fn () => $this->visibleTasks($request->user());
+        $scoped = fn () => $base()->statusIs($status);
 
         $overdueIds = $scoped()->awaitingScheduler()->pluck('id')->all();
 
@@ -46,21 +47,20 @@ class TraineeTaskController extends Controller
         return view('tasks.index', [
             'tasks' => $tasks,
             'status' => $status,
-            // `lateCount` = sudah ditandai scheduler.
+            // `lateCount` = sudah ditandai scheduler (global, bukan terfilter).
             // `pendingLateCount` = seluruh progress yang lewat deadline
             //   (isi kelompok 4, sumber hitungan mundur).
             // `schedulerDownCount` = yang lewat MELAMPIUI jendela penandaan
             //   dan masih progress - satu-satunya kondisi yang benar-benar
             //   berarti 'scheduler tidak jalan'. Kalau ini memakai
             //   `pendingLateCount`, setiap task yang baru lewat deadline akan
-            //   memicu peringatan palsu selama jendela 120 detik.
-            'lateCount' => $scoped()->statusLate()->count(),
-            // Jumlah per status untuk baris filter. Tanpa ini, urutan
-            // prioritas membuat task terlambat terdorong ke halaman
-            // terakhir sehingga praktis tidak terlihat lagi.
-            'statusCounts' => $this->statusCounts($scoped()),
-            'pendingLateCount' => $scoped()->awaitingScheduler()->count(),
-            'schedulerDownCount' => $scoped()->overdueProgress()->count(),
+            //   memicu peringatan palsu.
+            'lateCount' => $base()->statusLate()->count(),
+            // Jumlah per status untuk baris filter. Gunakan $base() supaya
+            // angka tidak berubah saat filter status aktif.
+            'statusCounts' => $this->statusCounts($base()),
+            'pendingLateCount' => $base()->awaitingScheduler()->count(),
+            'schedulerDownCount' => $base()->overdueProgress()->count(),
             'archiveGraceDays' => $this->archiveGraceDays(),
             // Acuan waktu untuk counter, supaya benar sejak frame pertama.
             'serverNowIso' => now()->toIso8601String(),
@@ -241,7 +241,7 @@ class TraineeTaskController extends Controller
     {
         abort_unless($this->isAdmin(), 403);
 
-        $ids = $request->validated('ids');
+        $ids = array_values(array_unique($request->validated('ids')));
 
         $deleted = TraineeTask::visibleTo($request->user())
             ->whereKey($ids)

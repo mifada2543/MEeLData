@@ -133,6 +133,30 @@ class ExportSelectedTest extends TestCase
         $this->assertCount(0, $exported);
     }
 
+    /**
+     * Duplikat ID di parameter `ids[]` harus dibuang (deduplikasi).
+     * Bug lama: UI checkbox ganda mengirim UUID yang sama dua kali.
+     * Server-side deduplikasi memastikan ekspor tetap 1 baris per task.
+     */
+    public function test_export_deduplicates_duplicate_ids(): void
+    {
+        $admin = $this->admin();
+        $task = $this->task();
+
+        // Kirim ID yang sama 3 kali
+        $this->actingAs($admin, 'web')
+            ->get(route('admin.tasks.export', ['ids' => [$task->id, $task->id, $task->id]]))
+            ->assertOk();
+
+        // Ekspor hanya boleh 1 baris data + header
+        $rows = app(TraineeTaskController::class)
+            ->exportQuery($admin, [$task->id, $task->id, $task->id])
+            ->get();
+
+        $this->assertCount(1, $rows, 'Duplikat ID harus dibuang, hasil ekspor 1 task.');
+        $this->assertSame($task->id, $rows->first()->id);
+    }
+
     public function test_admin_sees_all_tasks_in_export_scope(): void
     {
         $admin = $this->admin();

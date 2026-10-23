@@ -115,4 +115,24 @@ class BulkDeleteTest extends TestCase
 
         $this->assertSame(0, TraineeTask::count());
     }
+
+    /**
+     * Duplikat ID di parameter `ids[]` harus dibuang (deduplikasi).
+     * Bug lama: UI checkbox ganda mengirim UUID yang sama dua kali.
+     * Server-side deduplikasi memastikan flash message menunjukkan
+     * jumlah task yang benar-benar dihapus (tanpa duplikat).
+     */
+    public function test_bulk_delete_deduplicates_duplicate_ids(): void
+    {
+        $admin = $this->admin();
+        $task = TraineeTask::factory()->create();
+
+        // Kirim ID yang sama 3 kali
+        $response = $this->actingAs($admin, 'web')->post(route('admin.tasks.bulk-delete'), [
+            'ids' => [$task->id, $task->id, $task->id],
+        ]);
+
+        $response->assertSessionHas('status', '1 tugas berhasil dihapus.');
+        $this->assertSame(1, TraineeTask::withTrashed()->count());
+    }
 }

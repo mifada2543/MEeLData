@@ -117,6 +117,80 @@ class TaskListResponsiveUiTest extends TestCase
         }
     }
 
+    /**
+     * Chip filter harus menampilkan jumlah TOTAL per status, bukan
+     * jumlah hasil filter yang aktif. Bug lama: query count memakai
+     * $scoped() yang sudah difilter, sehingga chip Semua berubah
+     * saat pilih filter Progress.
+     */
+    public function test_status_filter_chips_show_total_counts_even_with_active_filter(): void
+    {
+        $trainee = $this->trainee();
+
+        // 3 progress + 2 done + 1 canceled + 1 late = 7
+        TraineeTask::factory()->count(3)->status(TaskStatus::Progress)->for($trainee, 'trainee')->create();
+        TraineeTask::factory()->count(2)->done()->for($trainee, 'trainee')->create();
+        TraineeTask::factory()->canceled()->for($trainee, 'trainee')->create();
+        TraineeTask::factory()->late()->for($trainee, 'trainee')->create();
+
+        // Saat filter Progress aktif
+        $html = $this->actingAs($trainee, 'web')
+            ->get(route('tasks.index', ['status' => 'progress']))
+            ->assertOk()
+            ->getContent();
+
+        // Semua chip harus tetap menampilkan jumlah TOTAL, bukan terfilter
+        // "Semua" chip tidak punya aria-current="page" saat filter aktif (hanya chip Progress yang punya)
+        $this->assertMatchesRegularExpression(
+            '/>\s*Semua\s*<span[^>]*>\s*7\s*<\/span>/',
+            $html,
+            'Chip "Semua" harus tetap 7 saat filter Progress aktif.',
+        );
+
+        // Chip Progress harus aktif dan count 3
+        $this->assertMatchesRegularExpression(
+            '/aria-current="page"[^>]*>\s*Progress\s*<span[^>]*>\s*3\s*<\/span>/',
+            $html,
+            'Chip "Progress" harus aktif dan count 3 saat filter Progress.',
+        );
+
+        foreach (['Selesai' => 2, 'Terlambat' => 1, 'Dibatalkan' => 1] as $label => $count) {
+            $this->assertMatchesRegularExpression(
+                '/>\s*'.preg_quote($label, '/').'\s*<span[^>]*>\s*'.$count.'\s*<\/span>/',
+                $html,
+                "Chip {$label} harus tetap {$count} saat filter Progress aktif.",
+            );
+        }
+
+        // Juga test filter Selesai
+        $html = $this->actingAs($trainee, 'web')
+            ->get(route('tasks.index', ['status' => 'done']))
+            ->assertOk()
+            ->getContent();
+
+        // "Semua" tetap 7
+        $this->assertMatchesRegularExpression(
+            '/>\s*Semua\s*<span[^>]*>\s*7\s*<\/span>/',
+            $html,
+            'Chip "Semua" harus tetap 7 saat filter Selesai aktif.',
+        );
+
+        // Chip Selesai harus aktif dan count 2
+        $this->assertMatchesRegularExpression(
+            '/aria-current="page"[^>]*>\s*Selesai\s*<span[^>]*>\s*2\s*<\/span>/',
+            $html,
+            'Chip "Selesai" harus aktif dan count 2 saat filter Selesai.',
+        );
+
+        foreach (['Progress' => 3, 'Terlambat' => 1, 'Dibatalkan' => 1] as $label => $count) {
+            $this->assertMatchesRegularExpression(
+                '/>\s*'.preg_quote($label, '/').'\s*<span[^>]*>\s*'.$count.'\s*<\/span>/',
+                $html,
+                "Chip {$label} harus tetap {$count} saat filter Selesai aktif.",
+            );
+        }
+    }
+
     public function test_filter_modal_is_removed_so_there_is_only_one_filter_control(): void
     {
         $trainee = $this->trainee();

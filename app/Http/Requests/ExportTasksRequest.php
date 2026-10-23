@@ -40,6 +40,6 @@ class ExportTasksRequest extends FormRequest
      */
     public function selectedIds(): array
     {
-        return array_values($this->validated('ids', []));
+        return array_values(array_unique($this->validated('ids', [])));
     }
 }

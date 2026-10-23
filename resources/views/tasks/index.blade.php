@@ -35,6 +35,10 @@
     x-init="startLive(@js(route($prefix.'tasks.live')), @js($serverNowIso), @js($overdueIds))"
     x-data="{
         selected: [],
+        // ID task yang bisa dipilih di halaman ini (dari server, unik).
+        // Digunakan oleh toggleAll() supaya select-all tidak menghitung
+        // checkbox ganda (kartu mobile + tabel desktop).
+        selectableIds: @js($tasks->getCollection()->pluck('id')->all()),
         busy: false,
         exportOpen: false,
         exporting: false,
@@ -44,8 +48,10 @@
          * Bila tidak ada, export mengikuti filter status yang aktif.
          */
         get exportUrl() {
-            if (this.selected.length === 0) return this.filterUrl
-            const params = this.selected.map((id) => 'ids[]=' + encodeURIComponent(id)).join('&')
+            // Dedupikan sebelum buat URL untuk jaga-jaga.
+            const ids = [...new Set(this.selected)]
+            if (ids.length === 0) return this.filterUrl
+            const params = ids.map((id) => 'ids[]=' + encodeURIComponent(id)).join('&')
             return @js(route($prefix.'tasks.export')) + '?' + params
         },
         /*
@@ -66,9 +72,8 @@
             setTimeout(() => { this.exporting = false }, 1200)
         },
         toggleAll(checked) {
-            this.selected = checked
-                ? Array.from(document.querySelectorAll('.bulk-checkbox')).map((el) => el.value)
-                : []
+            // Pakai selectableIds dari server, bukan query DOM.
+            this.selected = checked ? [...this.selectableIds] : []
         },
     }"
 >
